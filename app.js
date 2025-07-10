@@ -1,6 +1,19 @@
 import { productCSVData, sampleOrders } from './data.js';
 
 // ===================================
+// == FIREBASE CONFIG
+// ===================================
+const firebaseConfig = {
+  apiKey: "AIzaSyDMIl0gCaWjpcDHHBrM6HhYENi9edDDWKI",
+  authDomain: "tiktok-audit-thanaka.firebaseapp.com",
+  projectId: "tiktok-audit-thanaka",
+  storageBucket: "tiktok-audit-thanaka.appspot.com",
+  messagingSenderId: "95403940160",
+  appId: "1:95403940160:web:c6b9096c61503c881842a5",
+  measurementId: "G-H03BKG603V"
+};
+
+// ===================================
 // == DOM ELEMENTS
 // ===================================
 const processBtn = document.getElementById('process-btn');
@@ -26,7 +39,8 @@ const notificationPopup = document.getElementById('notification-popup');
 // ===================================
 let processedOrdersData = [];
 let masterProductData = {};
-const LOCAL_STORAGE_KEY = 'tanakaShopProductData';
+let db;
+let auth;
 
 // ===================================
 // == CORE LOGIC
@@ -199,45 +213,59 @@ function findProductCost(orderProductName, { products, skuMap }) {
     return null;
 }
 
+// ===================================
+// == FIREBASE FUNCTIONS
+// ===================================
+
 /**
- * Saves the changes made in the editable product data table to localStorage.
+ * Loads product data from Firestore or creates it from default if it doesn't exist.
  */
-function saveProductData() {
-    const tableRows = productDataTableContainer.querySelectorAll('tbody tr');
-    const updatedProducts = [];
-    
-    tableRows.forEach(row => {
-        const sku = row.dataset.sku;
-        const productToUpdate = { SKU: sku };
-        row.querySelectorAll('input[data-key]').forEach(input => {
-            const key = input.dataset.key;
-            productToUpdate[key] = input.value;
-        });
-        updatedProducts.push(productToUpdate);
-    });
+async function loadDataFromFirestore() {
+    const userId = auth.currentUser.uid;
+    const docRef = db.collection('productData').doc(userId);
+    const doc = await docRef.get();
 
-    // Save the updated array to localStorage as a JSON string
-    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updatedProducts));
-
-    // Update the in-memory master data
-    masterProductData.products = updatedProducts;
-    masterProductData.products.sort((a, b) => (b.Matching_Keywords || '').length - (a.Matching_Keywords || '').length);
-    masterProductData.skuMap = new Map(masterProductData.products.map(p => [p.SKU, p]));
-    
+    if (doc.exists) {
+        // If data exists in Firestore, use it
+        const products = doc.data().products;
+        masterProductData = {
+            products,
+            skuMap: new Map(products.map(p => [p.SKU, p]))
+        };
+        showNotification('✅ Loaded saved data from cloud.');
+    } else {
+        // If no data in Firestore, use default and save it for the first time
+        masterProductData = parseProductSheet(productCSVData);
+        await saveDataToFirestore(); // Initial save
+        showNotification('No saved data found. Loaded default data and saved to cloud.');
+    }
     renderProductTable(false);
-    uiEndEditMode();
-    showNotification('Product data saved successfully!');
 }
 
 /**
- * Clears the saved data from localStorage and reloads the page.
+ * Saves the current state of masterProductData to Firestore.
  */
-function resetProductData() {
-    localStorage.removeItem(LOCAL_STORAGE_KEY);
-    showNotification('Data reset to default. Reloading...');
-    setTimeout(() => {
-        location.reload();
-    }, 1500);
+async function saveDataToFirestore() {
+    const userId = auth.currentUser.uid;
+    const docRef = db.collection('productData').doc(userId);
+    try {
+        await docRef.set({ products: masterProductData.products });
+        showNotification('✅ Product data saved to cloud!');
+    } catch (error) {
+        console.error("Error saving data to Firestore: ", error);
+        showNotification('❌ Error saving data to cloud.', true);
+    }
+}
+
+/**
+ * Resets the data in Firestore to the default data from data.js.
+ */
+async function resetProductData() {
+    if (confirm("Are you sure you want to reset your data to the default? This cannot be undone.")) {
+        masterProductData = parseProductSheet(productCSVData);
+        await saveDataToFirestore();
+        renderProductTable(false);
+    }
 }
 
 
@@ -567,29 +595,31 @@ function showNotification(message, isError = false) {
 // == INITIALIZATION
 // ===================================
 
-function initialize() {
+async function initialize() {
     orderTextArea.value = sampleOrders;
     
-    // Load data from localStorage or fall back to default
-    const savedData = localStorage.getItem(LOCAL_STORAGE_KEY);
-    if (savedData) {
-        try {
-            const products = JSON.parse(savedData);
-            masterProductData = {
-                products,
-                skuMap: new Map(products.map(p => [p.SKU, p]))
-            };
-            showNotification('Loaded saved product data.');
-        } catch (e) {
-            console.error("Failed to parse saved data, using default.", e);
-            masterProductData = parseProductSheet(productCSVData);
-        }
-    } else {
+    try {
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        auth = firebase.auth();
+        db = firebase.firestore();
+
+        // Sign in anonymously to get a user ID
+        await auth.signInAnonymously();
+        auth.onAuthStateChanged(async user => {
+            if (user) {
+                showNotification('☁️ Connected to cloud database...');
+                await loadDataFromFirestore();
+            }
+        });
+    } catch (e) {
+        console.error("Firebase initialization failed:", e);
+        showNotification('❌ Cloud connection failed. Using local data.', true);
+        // Fallback to local data if Firebase fails
         masterProductData = parseProductSheet(productCSVData);
+        renderProductTable(false);
     }
     
-    renderProductTable(false);
-
     processBtn.addEventListener('click', handleProcessOrders);
     copyBtn.addEventListener('click', copyReportToClipboard);
     exportBtn.addEventListener('click', exportToWord);
@@ -597,16 +627,9 @@ function initialize() {
     exportBtn.disabled = true;
 
     editDataBtn.addEventListener('click', uiStartEditMode);
-    saveDataBtn.addEventListener('click', saveProductData);
+    saveDataBtn.addEventListener('click', saveDataToFirestore);
     cancelDataBtn.addEventListener('click', uiEndEditMode);
     resetDataBtn.addEventListener('click', resetProductData);
-
-    const libraryCheckInterval = setInterval(() => {
-        if (typeof window.XLSX !== 'undefined' && typeof window.docx !== 'undefined') {
-            clearInterval(libraryCheckInterval);
-            showNotification('✅ Libraries loaded. Ready to process!');
-        }
-    }, 100);
 }
 
 initialize();
