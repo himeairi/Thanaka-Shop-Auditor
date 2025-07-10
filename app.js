@@ -246,6 +246,23 @@ async function loadDataFromFirestore() {
  * Saves the current state of masterProductData to Firestore.
  */
 async function saveDataToFirestore() {
+    // FIXED: Read the current values from the form fields before saving.
+    const tableRows = productDataTableContainer.querySelectorAll('tbody tr');
+    const updatedProducts = [];
+    tableRows.forEach(row => {
+        const sku = row.dataset.sku;
+        const productToUpdate = { SKU: sku };
+        row.querySelectorAll('input[data-key]').forEach(input => {
+            const key = input.dataset.key;
+            productToUpdate[key] = input.value;
+        });
+        updatedProducts.push(productToUpdate);
+    });
+
+    // Update the in-memory master data object with the new data from the form
+    masterProductData.products = updatedProducts;
+    
+    // Now, save the updated masterProductData to Firestore
     const userId = auth.currentUser.uid;
     const docRef = db.collection('productData').doc(userId);
     try {
@@ -255,6 +272,10 @@ async function saveDataToFirestore() {
         console.error("Error saving data to Firestore: ", error);
         showNotification('❌ Error saving data to cloud.', true);
     }
+
+    // Finally, re-render the table and exit edit mode
+    renderProductTable(false);
+    uiEndEditMode();
 }
 
 /**
