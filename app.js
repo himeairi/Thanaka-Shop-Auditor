@@ -221,12 +221,15 @@ function findProductCost(orderProductName, { products, skuMap }) {
  * Loads product data from Firestore or creates it from default if it doesn't exist.
  */
 async function loadDataFromFirestore() {
+    if (!auth.currentUser) {
+        showNotification('❌ Not connected to the database. Please refresh.', true);
+        return;
+    }
     const userId = auth.currentUser.uid;
     const docRef = db.collection('productData').doc(userId);
     const doc = await docRef.get();
 
     if (doc.exists) {
-        // If data exists in Firestore, use it
         const products = doc.data().products;
         masterProductData = {
             products,
@@ -234,9 +237,8 @@ async function loadDataFromFirestore() {
         };
         showNotification('✅ Loaded saved data from cloud.');
     } else {
-        // If no data in Firestore, use default and save it for the first time
         masterProductData = parseProductSheet(productCSVData);
-        await saveDataToFirestore(); // Initial save
+        await saveDataToFirestore();
         showNotification('No saved data found. Loaded default data and saved to cloud.');
     }
     renderProductTable(false);
@@ -246,7 +248,12 @@ async function loadDataFromFirestore() {
  * Saves the current state of masterProductData to Firestore.
  */
 async function saveDataToFirestore() {
-    // FIXED: Read the current values from the form fields before saving.
+    // FIXED: Add a guard clause to prevent saving if not authenticated.
+    if (!auth.currentUser) {
+        alert("Cannot save. Not connected to the database. Please refresh the page and try again.");
+        return;
+    }
+
     const tableRows = productDataTableContainer.querySelectorAll('tbody tr');
     const updatedProducts = [];
     tableRows.forEach(row => {
@@ -259,10 +266,8 @@ async function saveDataToFirestore() {
         updatedProducts.push(productToUpdate);
     });
 
-    // Update the in-memory master data object with the new data from the form
     masterProductData.products = updatedProducts;
     
-    // Now, save the updated masterProductData to Firestore
     const userId = auth.currentUser.uid;
     const docRef = db.collection('productData').doc(userId);
     try {
@@ -273,7 +278,6 @@ async function saveDataToFirestore() {
         showNotification('❌ Error saving data to cloud.', true);
     }
 
-    // Finally, re-render the table and exit edit mode
     renderProductTable(false);
     uiEndEditMode();
 }
@@ -282,6 +286,10 @@ async function saveDataToFirestore() {
  * Resets the data in Firestore to the default data from data.js.
  */
 async function resetProductData() {
+    if (!auth.currentUser) {
+        alert("Cannot reset. Not connected to the database. Please refresh the page and try again.");
+        return;
+    }
     if (confirm("Are you sure you want to reset your data to the default? This cannot be undone.")) {
         masterProductData = parseProductSheet(productCSVData);
         await saveDataToFirestore();
