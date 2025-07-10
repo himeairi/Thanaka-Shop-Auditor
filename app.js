@@ -229,7 +229,7 @@ async function loadDataFromFirestore() {
     const docRef = db.collection('productData').doc(userId);
     const doc = await docRef.get();
 
-    if (doc.exists) {
+    if (doc.exists && doc.data().products && doc.data().products.length > 0) {
         const products = doc.data().products;
         masterProductData = {
             products,
@@ -238,17 +238,16 @@ async function loadDataFromFirestore() {
         showNotification('✅ Loaded saved data from cloud.');
     } else {
         masterProductData = parseProductSheet(productCSVData);
-        await saveDataToFirestore();
+        await saveMasterDataToFirestore(); // Use the new function to save the default data
         showNotification('No saved data found. Loaded default data and saved to cloud.');
     }
     renderProductTable(false);
 }
 
 /**
- * Saves the current state of masterProductData to Firestore.
+ * Reads data from the editable table and saves it to Firestore.
  */
-async function saveDataToFirestore() {
-    // FIXED: Add a guard clause to prevent saving if not authenticated.
+async function updateAndSaveFromDOM() {
     if (!auth.currentUser) {
         alert("Cannot save. Not connected to the database. Please refresh the page and try again.");
         return;
@@ -268,18 +267,26 @@ async function saveDataToFirestore() {
 
     masterProductData.products = updatedProducts;
     
+    await saveMasterDataToFirestore();
+
+    renderProductTable(false);
+    uiEndEditMode();
+}
+
+/**
+ * Saves the current masterProductData object to Firestore.
+ */
+async function saveMasterDataToFirestore() {
     const userId = auth.currentUser.uid;
     const docRef = db.collection('productData').doc(userId);
     try {
+        // This function now only saves the data held in the master variable.
         await docRef.set({ products: masterProductData.products });
         showNotification('✅ Product data saved to cloud!');
     } catch (error) {
         console.error("Error saving data to Firestore: ", error);
         showNotification('❌ Error saving data to cloud.', true);
     }
-
-    renderProductTable(false);
-    uiEndEditMode();
 }
 
 /**
@@ -290,9 +297,9 @@ async function resetProductData() {
         alert("Cannot reset. Not connected to the database. Please refresh the page and try again.");
         return;
     }
-    if (confirm("Are you sure you want to reset your data to the default? This cannot be undone.")) {
+    if (confirm("Are you sure you want to reset your data to the default? This will overwrite your cloud data.")) {
         masterProductData = parseProductSheet(productCSVData);
-        await saveDataToFirestore();
+        await saveMasterDataToFirestore();
         renderProductTable(false);
     }
 }
@@ -656,7 +663,7 @@ async function initialize() {
     exportBtn.disabled = true;
 
     editDataBtn.addEventListener('click', uiStartEditMode);
-    saveDataBtn.addEventListener('click', saveDataToFirestore);
+    saveDataBtn.addEventListener('click', updateAndSaveFromDOM); // Use the correct save function
     cancelDataBtn.addEventListener('click', uiEndEditMode);
     resetDataBtn.addEventListener('click', resetProductData);
 }
