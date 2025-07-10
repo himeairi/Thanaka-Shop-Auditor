@@ -1,0 +1,612 @@
+import { productCSVData, sampleOrders } from './data.js';
+
+// ===================================
+// == DOM ELEMENTS
+// ===================================
+const processBtn = document.getElementById('process-btn');
+const copyBtn = document.getElementById('copy-btn');
+const exportBtn = document.getElementById('export-btn');
+const orderTextArea = document.getElementById('order-text');
+const resultsSection = document.getElementById('results-section');
+const resultsTableBody = document.getElementById('results-table-body');
+const loadingDiv = document.getElementById('loading');
+const totalRevenueEl = document.getElementById('total-revenue');
+const totalCostEl = document.getElementById('total-cost');
+const totalProfitEl = document.getElementById('total-profit');
+const totalOrdersEl = document.getElementById('total-orders');
+const editDataBtn = document.getElementById('edit-data-btn');
+const saveDataBtn = document.getElementById('save-data-btn');
+const cancelDataBtn = document.getElementById('cancel-data-btn');
+const resetDataBtn = document.getElementById('reset-data-btn');
+const productDataTableContainer = document.getElementById('product-data-table-container');
+const notificationPopup = document.getElementById('notification-popup');
+
+// ===================================
+// == STATE
+// ===================================
+let processedOrdersData = [];
+let masterProductData = {};
+const LOCAL_STORAGE_KEY = 'tanakaShopProductData';
+
+// ===================================
+// == CORE LOGIC
+// ===================================
+
+/**
+ * Main controller to handle the order processing workflow.
+ */
+async function handleProcessOrders() {
+    uiStartLoading();
+    
+    const orderText = orderTextArea.value;
+    if (!orderText.trim()) {
+        alert("Please paste your order text.");
+        uiStopLoading();
+        return;
+    }
+
+    try {
+        const orders = parseOrders(orderText, masterProductData);
+
+        if (orders.length === 0) {
+            throw new Error("Could not parse any orders. Please check the text format and ensure product names in the pre-loaded data are correct.");
+        }
+
+        let totalRevenue = 0, totalCost = 0;
+        
+        for (const order of orders) {
+            let currentOrderTotalCost = 0;
+            for (const item of order.items) {
+                const productInfo = findProductCost(item.productName, masterProductData);
+                if (productInfo) {
+                    currentOrderTotalCost += productInfo.cost * item.quantity;
+                    item.matchedProduct = productInfo.matchedProduct;
+                } else {
+                    item.matchedProduct = { Matching_Keywords: 'NOT FOUND', Product_Name: item.productName, Image_URL: '' };
+                }
+            }
+            
+            order.cost = currentOrderTotalCost;
+            order.profit = order.salePrice - order.cost;
+            
+            totalRevenue += order.salePrice;
+            totalCost += order.cost;
+            processedOrdersData.push(order);
+        }
+
+        displayResults(processedOrdersData);
+
+    } catch (error) {
+        console.error("An error occurred during processing:", error);
+        alert(`Error: ${error.message}`);
+    } finally {
+        uiStopLoading();
+    }
+}
+
+// ===================================
+// == DATA HANDLING
+// ===================================
+
+/**
+ * Parses the product data from a CSV string into a usable format.
+ * @param {string} csvString - The CSV data as a string.
+ * @returns {{products: Array<Object>, skuMap: Map<string, Object>}}
+ */
+function parseProductSheet(csvString) {
+    const workbook = XLSX.read(csvString.trim(), { type: 'string' });
+    const sheetName = workbook.SheetNames[0];
+    const sheet = workbook.Sheets[sheetName];
+    const products = XLSX.utils.sheet_to_json(sheet);
+    products.sort((a, b) => (b.Matching_Keywords || '').length - (a.Matching_Keywords || '').length);
+    const skuMap = new Map(products.map(p => [p.SKU, p]));
+    return { products, skuMap };
+}
+
+/**
+ * Parses orders by searching for known product names within each block of text.
+ * @param {string} text - The raw text from the textarea.
+ * @param {Object} productData - The pre-loaded product data.
+ * @returns {Array<Object>} An array of structured order objects, where each object can contain multiple items.
+ */
+function parseOrders(text, productData) {
+    const parsedOrders = [];
+    const orderBlocks = text.split(/รหัสคำสั่งซื้อ:/).slice(1);
+
+    for (const block of orderBlocks) {
+        try {
+            const orderIdRegex = /^\s*(\d+)/;
+            const salePriceRegex = /฿\s*([\d,]+\.?\d*)/;
+
+            const orderIdMatch = block.match(orderIdRegex);
+            const salePriceMatch = block.match(salePriceRegex);
+
+            if (!orderIdMatch || !salePriceMatch) {
+                console.warn("Skipping block: Could not find Order ID or Sale Price.", block);
+                continue;
+            }
+
+            const orderId = orderIdMatch[1].trim();
+            const salePrice = parseFloat(salePriceMatch[1].replace(/,/g, ''));
+            const items = [];
+
+            let foundProducts = [];
+            for (const product of productData.products) {
+                if (block.includes(product.Matching_Keywords)) {
+                    foundProducts.push(product);
+                }
+            }
+
+            const finalProducts = foundProducts.filter(productA => {
+                return !foundProducts.some(productB => 
+                    productA.Matching_Keywords !== productB.Matching_Keywords && 
+                    productB.Matching_Keywords.includes(productA.Matching_Keywords)
+                );
+            });
+            
+            for (const product of finalProducts) {
+                const productNameIndex = block.indexOf(product.Matching_Keywords);
+                const searchArea = block.substring(productNameIndex);
+                const quantityMatch = searchArea.match(/×\s*(\d+)/);
+                
+                if (quantityMatch) {
+                    items.push({
+                        productName: product.Matching_Keywords,
+                        quantity: parseInt(quantityMatch[1], 10)
+                    });
+                }
+            }
+
+            if (items.length > 0) {
+                parsedOrders.push({
+                    orderId,
+                    salePrice,
+                    items
+                });
+            }
+
+        } catch (e) {
+            console.error("An error occurred while parsing an order block:", e);
+        }
+    }
+    return parsedOrders;
+}
+
+
+/**
+ * Finds the correct product and calculates its cost.
+ * @param {string} orderProductName - The product name from the parsed order.
+ * @param {{products: Array<Object>, skuMap: Map<string, Object>}} productData
+ * @returns {Object|null}
+ */
+function findProductCost(orderProductName, { products, skuMap }) {
+    const bestMatch = products.find(p => p.Matching_Keywords === orderProductName);
+
+    if (bestMatch) {
+        let totalCost = 0;
+        if (bestMatch.Bundle_Components) {
+            const componentSKUs = String(bestMatch.Bundle_Components).split(',').map(s => s.trim());
+            for (const sku of componentSKUs) {
+                if (skuMap.has(sku)) {
+                    totalCost += parseFloat(skuMap.get(sku).Cost_Price);
+                }
+            }
+        } else {
+            totalCost = parseFloat(bestMatch.Cost_Price);
+        }
+        return { cost: totalCost, matchedProduct: bestMatch };
+    }
+    return null;
+}
+
+/**
+ * Saves the changes made in the editable product data table to localStorage.
+ */
+function saveProductData() {
+    const tableRows = productDataTableContainer.querySelectorAll('tbody tr');
+    const updatedProducts = [];
+    
+    tableRows.forEach(row => {
+        const sku = row.dataset.sku;
+        const productToUpdate = { SKU: sku };
+        row.querySelectorAll('input[data-key]').forEach(input => {
+            const key = input.dataset.key;
+            productToUpdate[key] = input.value;
+        });
+        updatedProducts.push(productToUpdate);
+    });
+
+    // Save the updated array to localStorage as a JSON string
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updatedProducts));
+
+    // Update the in-memory master data
+    masterProductData.products = updatedProducts;
+    masterProductData.products.sort((a, b) => (b.Matching_Keywords || '').length - (a.Matching_Keywords || '').length);
+    masterProductData.skuMap = new Map(masterProductData.products.map(p => [p.SKU, p]));
+    
+    renderProductTable(false);
+    uiEndEditMode();
+    showNotification('Product data saved successfully!');
+}
+
+/**
+ * Clears the saved data from localStorage and reloads the page.
+ */
+function resetProductData() {
+    localStorage.removeItem(LOCAL_STORAGE_KEY);
+    showNotification('Data reset to default. Reloading...');
+    setTimeout(() => {
+        location.reload();
+    }, 1500);
+}
+
+
+// ===================================
+// == UI / VIEW FUNCTIONS
+// ===================================
+
+function uiStartLoading() {
+    loadingDiv.classList.remove('hidden');
+    resultsSection.classList.add('hidden');
+    processBtn.disabled = true;
+    copyBtn.disabled = true;
+    exportBtn.disabled = true;
+    resultsTableBody.innerHTML = '';
+    processedOrdersData = [];
+}
+
+function uiStopLoading() {
+    loadingDiv.classList.add('hidden');
+    processBtn.disabled = false;
+    if (processedOrdersData.length > 0) {
+        copyBtn.disabled = false;
+        exportBtn.disabled = false;
+    }
+}
+
+function uiStartEditMode() {
+    renderProductTable(true);
+    editDataBtn.classList.add('hidden');
+    saveDataBtn.classList.remove('hidden');
+    cancelDataBtn.classList.remove('hidden');
+    resetDataBtn.classList.add('hidden');
+}
+
+function uiEndEditMode() {
+    renderProductTable(false);
+    editDataBtn.classList.remove('hidden');
+    saveDataBtn.classList.add('hidden');
+    cancelDataBtn.classList.add('hidden');
+    resetDataBtn.classList.remove('hidden');
+}
+
+/**
+ * Renders the results into the summary cards and the main table.
+ * @param {Array<Object>} orders
+ */
+function displayResults(orders) {
+    const totalRevenue = orders.reduce((sum, order) => sum + order.salePrice, 0);
+    const totalCost = orders.reduce((sum, order) => sum + order.cost, 0);
+    const totalProfit = totalRevenue - totalCost;
+    const formatCurrency = (num) => `฿${num.toFixed(2)}`;
+
+    totalRevenueEl.textContent = formatCurrency(totalRevenue);
+    totalCostEl.textContent = formatCurrency(totalCost);
+    totalProfitEl.textContent = formatCurrency(totalProfit);
+    totalOrdersEl.textContent = orders.length;
+
+    orders.forEach(order => {
+        const row = document.createElement('tr');
+        row.className = 'hover:bg-gray-50';
+
+        const productCellContent = order.items.map(item => `${item.matchedProduct.Product_Name} (x${item.quantity})`).join('<br>');
+        const totalQuantity = order.items.reduce((sum, item) => sum + item.quantity, 0);
+
+        row.innerHTML = `
+            <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-800">${order.orderId}</td>
+            <td class="px-4 py-3 text-sm text-gray-600">${productCellContent}</td>
+            <td class="px-4 py-3 text-sm text-gray-800 text-center">${totalQuantity}</td>
+            <td class="px-4 py-3 text-sm text-gray-800">${formatCurrency(order.salePrice)}</td>
+            <td class="px-4 py-3 text-sm text-red-600">${formatCurrency(order.cost)}</td>
+            <td class="px-4 py-3 text-sm font-bold ${order.profit >= 0 ? 'text-green-600' : 'text-red-700'}">${formatCurrency(order.profit)}</td>
+        `;
+        resultsTableBody.appendChild(row);
+    });
+
+    resultsSection.classList.remove('hidden');
+}
+
+/**
+ * Generates a clean HTML version of the report and copies it to the clipboard.
+ */
+function copyReportToClipboard() {
+    if (processedOrdersData.length === 0) {
+        alert("No data to copy. Please process orders first.");
+        return;
+    }
+
+    const formatCurrency = (num) => `฿${num.toFixed(2)}`;
+    const totalRevenue = processedOrdersData.reduce((sum, order) => sum + order.salePrice, 0);
+    const totalCost = processedOrdersData.reduce((sum, order) => sum + order.cost, 0);
+    const totalProfit = totalRevenue - totalCost;
+
+    let htmlString = `
+        <h1>Sales Audit Summary</h1>
+        <p><strong>Total Revenue:</strong> ${formatCurrency(totalRevenue)}</p>
+        <p><strong>Total Cost:</strong> ${formatCurrency(totalCost)}</p>
+        <p><strong>Total Profit:</strong> ${formatCurrency(totalProfit)}</p>
+        <p><strong>Total Orders:</strong> ${processedOrdersData.length}</p>
+        <br>
+        <table border="1" style="border-collapse: collapse; width: 100%;">
+            <thead>
+                <tr>
+                    <th style="padding: 8px; text-align: left;">Order ID</th>
+                    <th style="padding: 8px; text-align: left;">Product</th>
+                    <th style="padding: 8px; text-align: left;">Qty</th>
+                    <th style="padding: 8px; text-align: left;">Sale Price</th>
+                    <th style="padding: 8px; text-align: left;">Total Cost</th>
+                    <th style="padding: 8px; text-align: left;">Profit</th>
+                </tr>
+            </thead>
+            <tbody>
+    `;
+
+    processedOrdersData.forEach(order => {
+        const productCellContent = order.items.map(item => `${item.matchedProduct.Product_Name} (x${item.quantity})`).join('<br>');
+        const totalQuantity = order.items.reduce((sum, item) => sum + item.quantity, 0);
+        htmlString += `
+            <tr>
+                <td style="padding: 8px;">${order.orderId}</td>
+                <td style="padding: 8px;">${productCellContent}</td>
+                <td style="padding: 8px;">${totalQuantity}</td>
+                <td style="padding: 8px;">${formatCurrency(order.salePrice)}</td>
+                <td style="padding: 8px;">${formatCurrency(order.cost)}</td>
+                <td style="padding: 8px;">${formatCurrency(order.profit)}</td>
+            </tr>
+        `;
+    });
+
+    htmlString += `</tbody></table>`;
+
+    const tempEl = document.createElement('div');
+    tempEl.style.position = 'absolute';
+    tempEl.style.left = '-9999px';
+    tempEl.innerHTML = htmlString;
+    document.body.appendChild(tempEl);
+    
+    const range = document.createRange();
+    range.selectNode(tempEl);
+    window.getSelection().removeAllRanges();
+    window.getSelection().addRange(range);
+    
+    try {
+        document.execCommand('copy');
+        showNotification('✅ Report copied to clipboard!');
+    } catch (err) {
+        console.error('Failed to copy text: ', err);
+        showNotification('❌ Failed to copy report.', true);
+    }
+
+    document.body.removeChild(tempEl);
+}
+
+/**
+ * Generates and triggers the download of a .docx file.
+ */
+async function exportToWord() {
+    if (processedOrdersData.length === 0) {
+        alert("No data to export. Please process orders first.");
+        return;
+    }
+    
+    if (typeof window.docx === 'undefined') {
+        alert('The export library is still loading. Please wait a moment and try again.');
+        return;
+    }
+
+    uiStartLoading();
+    
+    const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, HeadingLevel } = window.docx;
+    const formatCurrency = (num) => `฿${num.toFixed(2)}`;
+    const totalRevenue = processedOrdersData.reduce((sum, order) => sum + order.salePrice, 0);
+    const totalCost = processedOrdersData.reduce((sum, order) => sum + order.cost, 0);
+    const totalProfit = totalRevenue - totalCost;
+
+    const summaryItems = [
+        new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun("Sales Audit Summary")] }),
+        new Paragraph({ children: [new TextRun({ text: `Total Revenue: ${formatCurrency(totalRevenue)}`, bold: true })] }),
+        new Paragraph({ children: [new TextRun({ text: `Total Cost: ${formatCurrency(totalCost)}`, bold: true })] }),
+        new Paragraph({ children: [new TextRun({ text: `Total Profit: ${formatCurrency(totalProfit)}`, bold: true })] }),
+        new Paragraph({ children: [new TextRun({ text: `Total Orders: ${processedOrdersData.length}`, bold: true })] }),
+        new Paragraph({ text: "" }),
+    ];
+
+    const tableHeader = new TableRow({
+        children: [
+            new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: "Details", bold: true })] })] }),
+            new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: "Financials", bold: true })] })] }),
+        ],
+        tableHeader: true,
+    });
+    
+    const tableRows = [tableHeader];
+
+    for (const order of processedOrdersData) {
+        const detailsParagraphs = [
+            new Paragraph({ children: [new TextRun({ text: `Order ID: ${order.orderId}`, bold: true })] })
+        ];
+
+        order.items.forEach(item => {
+            detailsParagraphs.push(new Paragraph(`${item.matchedProduct.Product_Name} (x${item.quantity})`));
+            if (item.matchedProduct.Image_URL) {
+                detailsParagraphs.push(new Paragraph({ 
+                    children: [new TextRun({ text: `Image: ${item.matchedProduct.Image_URL}`, style: "Hyperlink" })],
+                }));
+            }
+        });
+        
+        const detailsCell = new TableCell({ children: detailsParagraphs });
+
+        const financialsCell = new TableCell({
+            children: [
+                new Paragraph(`Sale: ${formatCurrency(order.salePrice)}`),
+                new Paragraph(`Cost: ${formatCurrency(order.cost)}`),
+                new Paragraph({ children: [new TextRun({ text: `Profit: ${formatCurrency(order.profit)}`, bold: true })] }),
+            ],
+        });
+
+        tableRows.push(new TableRow({ children: [detailsCell, financialsCell] }));
+    }
+    
+    const table = new Table({ rows: tableRows, width: { size: 100, type: WidthType.PERCENTAGE } });
+    const doc = new Document({
+        styles: {
+            hyperlink: {
+                "Default Paragraph Font": {
+                    run: {
+                        color: "0000FF",
+                        underline: {
+                            type: "single",
+                            color: "0000FF",
+                        },
+                    },
+                },
+            },
+        },
+        sections: [{ children: [...summaryItems, table] }]
+    });
+    
+    try {
+        const blob = await Packer.toBlob(doc);
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `Sales_Report_${new Date().toISOString().split('T')[0]}.docx`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    } catch (e) {
+        console.error("Error packing document:", e);
+        alert("Failed to generate the Word document.");
+    } finally {
+        uiStopLoading();
+    }
+}
+
+/**
+ * Renders the product data table.
+ * @param {boolean} isEditable - If true, renders inputs; otherwise, text.
+ */
+function renderProductTable(isEditable = false) {
+    const table = document.createElement('table');
+    table.className = 'min-w-full bg-white border border-gray-200';
+    const thead = document.createElement('thead');
+    thead.className = 'bg-gray-50';
+    thead.innerHTML = `
+        <tr>
+            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SKU</th>
+            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Product Name</th>
+            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Matching Keywords</th>
+            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cost Price</th>
+            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Image URL</th>
+            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Bundle Components</th>
+        </tr>
+    `;
+    table.appendChild(thead);
+    const tbody = document.createElement('tbody');
+    tbody.className = 'divide-y divide-gray-200';
+
+    masterProductData.products.forEach(product => {
+        const row = document.createElement('tr');
+        row.dataset.sku = product.SKU;
+        if (isEditable) {
+            row.innerHTML = `
+                <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-800">${product.SKU}</td>
+                <td class="px-2 py-1"><input type="text" data-key="Product_Name" class="w-full p-1 border rounded" value="${product.Product_Name || ''}"></td>
+                <td class="px-2 py-1"><input type="text" data-key="Matching_Keywords" class="w-full p-1 border rounded" value="${product.Matching_Keywords || ''}"></td>
+                <td class="px-2 py-1"><input type="text" data-key="Cost_Price" class="w-24 p-1 border rounded" value="${product.Cost_Price || ''}"></td>
+                <td class="px-2 py-1"><input type="text" data-key="Image_URL" class="w-full p-1 border rounded" value="${product.Image_URL || ''}"></td>
+                <td class="px-2 py-1"><input type="text" data-key="Bundle_Components" class="w-full p-1 border rounded" value="${product.Bundle_Components || ''}"></td>
+            `;
+        } else {
+            row.innerHTML = `
+                <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-800">${product.SKU}</td>
+                <td class="px-4 py-3 text-sm text-gray-600">${product.Product_Name || ''}</td>
+                <td class="px-4 py-3 text-sm text-gray-600">${product.Matching_Keywords || ''}</td>
+                <td class="px-4 py-3 text-sm text-gray-800">${product.Cost_Price || ''}</td>
+                <td class="px-4 py-3 text-sm text-gray-600">${product.Image_URL || ''}</td>
+                <td class="px-4 py-3 text-sm text-gray-600">${product.Bundle_Components || ''}</td>
+            `;
+        }
+        tbody.appendChild(row);
+    });
+    table.appendChild(tbody);
+    productDataTableContainer.innerHTML = '';
+    productDataTableContainer.appendChild(table);
+}
+
+/**
+ * Shows a temporary popup to notify the user.
+ * @param {string} message - The message to display.
+ * @param {boolean} isError - If true, shows a red error popup.
+ */
+function showNotification(message, isError = false) {
+    notificationPopup.textContent = message;
+    notificationPopup.className = `fixed bottom-5 right-5 text-white py-3 px-5 rounded-lg shadow-lg transition-opacity duration-500 opacity-0 ${isError ? 'bg-red-500' : 'bg-green-500'}`;
+    
+    notificationPopup.classList.remove('hidden');
+    setTimeout(() => notificationPopup.classList.remove('opacity-0'), 10);
+    setTimeout(() => {
+        notificationPopup.classList.add('opacity-0');
+        setTimeout(() => notificationPopup.classList.add('hidden'), 500);
+    }, 3000);
+}
+
+// ===================================
+// == INITIALIZATION
+// ===================================
+
+function initialize() {
+    orderTextArea.value = sampleOrders;
+    
+    // Load data from localStorage or fall back to default
+    const savedData = localStorage.getItem(LOCAL_STORAGE_KEY);
+    if (savedData) {
+        try {
+            const products = JSON.parse(savedData);
+            masterProductData = {
+                products,
+                skuMap: new Map(products.map(p => [p.SKU, p]))
+            };
+            showNotification('Loaded saved product data.');
+        } catch (e) {
+            console.error("Failed to parse saved data, using default.", e);
+            masterProductData = parseProductSheet(productCSVData);
+        }
+    } else {
+        masterProductData = parseProductSheet(productCSVData);
+    }
+    
+    renderProductTable(false);
+
+    processBtn.addEventListener('click', handleProcessOrders);
+    copyBtn.addEventListener('click', copyReportToClipboard);
+    exportBtn.addEventListener('click', exportToWord);
+    copyBtn.disabled = true;
+    exportBtn.disabled = true;
+
+    editDataBtn.addEventListener('click', uiStartEditMode);
+    saveDataBtn.addEventListener('click', saveProductData);
+    cancelDataBtn.addEventListener('click', uiEndEditMode);
+    resetDataBtn.addEventListener('click', resetProductData);
+
+    const libraryCheckInterval = setInterval(() => {
+        if (typeof window.XLSX !== 'undefined' && typeof window.docx !== 'undefined') {
+            clearInterval(libraryCheckInterval);
+            showNotification('✅ Libraries loaded. Ready to process!');
+        }
+    }, 100);
+}
+
+initialize();
