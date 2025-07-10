@@ -8,8 +8,14 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- SheetJS (xlsx) CDN for parsing spreadsheet files -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    <!-- docx CDN for generating Word documents -->
-    <script src="https://unpkg.com/docx@8.5.0/build/index.js"></script>
+    
+    <!-- 
+      FIXED: Added Firebase SDKs. These must be loaded before your app.js script.
+    -->
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-firestore-compat.js"></script>
+
     <!-- The main application script -->
     <script src="app.js" type="module" defer></script>
 </head>
@@ -99,7 +105,7 @@
             <!-- PRE-LOADED DATA SECTION -->
             <div id="preloaded-data-section" class="mt-12 pt-8 border-t-2 border-gray-200">
                 <div class="flex justify-between items-center mb-4">
-                    <h2 class="text-2xl font-bold text-gray-800">Pre-loaded Product Data</h2>
+                    <h2 class="text-2xl font-bold text-gray-800">Product Data</h2>
                     <div>
                         <button id="edit-data-btn" class="bg-gray-500 text-white font-bold py-2 px-4 rounded-md hover:bg-gray-600">Edit Data</button>
                         <button id="save-data-btn" class="hidden bg-blue-600 text-white font-bold py-2 px-4 rounded-md hover:bg-blue-700">Save Changes</button>
