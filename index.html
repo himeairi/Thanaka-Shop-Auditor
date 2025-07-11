@@ -8,9 +8,11 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- SheetJS (xlsx) CDN for parsing spreadsheet files -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    <!-- docx CDN for generating Word documents -->
-    <script src="https://unpkg.com/docx@8.5.0/build/index.js"></script>
-    <!-- The main application script -->
+    
+    <!-- 
+      FIXED: The main application script is now the single point of entry.
+      It will handle importing everything else it needs.
+    -->
     <script src="app.js" type="module" defer></script>
 </head>
 <body class="bg-gray-100 font-sans antialiased">
