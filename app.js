@@ -26,6 +26,7 @@ const firebaseConfig = {
 const processBtn = document.getElementById('process-btn');
 const copyBtn = document.getElementById('copy-btn');
 const saveOrdersBtn = document.getElementById('save-orders-btn');
+const exportBtn = document.getElementById('export-btn');
 const orderTextArea = document.getElementById('order-text');
 const resultsSection = document.getElementById('results-section');
 const resultsTableBody = document.getElementById('results-table-body');
@@ -63,6 +64,8 @@ let auth;
  * Main controller to handle the order processing workflow.
  */
 async function handleProcessOrders() {
+    // FIXED: Reset the processed data array at the start of every run.
+    processedOrdersData = [];
     uiStartLoading();
     
     const orderText = orderTextArea.value;
