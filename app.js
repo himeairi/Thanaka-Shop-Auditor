@@ -52,12 +52,14 @@ const weeklyResultsTableBody = document.getElementById('weekly-results-table-bod
 const totalWeeklyProfitEl = document.getElementById('total-weekly-profit');
 const totalWeeklyCostEl = document.getElementById('total-weekly-cost');
 const totalWeeklyOrdersEl = document.getElementById('total-weekly-orders');
+const copyWeeklyBtn = document.getElementById('copy-weekly-btn');
 
 
 // ===================================
 // == STATE
 // ===================================
 let processedOrdersData = [];
+let weeklyResultsData = [];
 let masterProductData = {};
 let db;
 let auth;
@@ -159,7 +161,7 @@ async function handleWeeklyAudit() {
 
             let totalWeeklyProfit = 0;
             let totalWeeklyCost = 0;
-            const weeklyResults = [];
+            weeklyResultsData = []; // Clear previous results
             let foundMatches = 0;
 
             const dataRows = reportData.slice(1);
@@ -181,7 +183,7 @@ async function handleWeeklyAudit() {
                     totalWeeklyProfit += profit;
                     totalWeeklyCost += savedOrder.cost;
                     
-                    weeklyResults.push({
+                    weeklyResultsData.push({
                         orderId: savedOrder.orderId,
                         products: savedOrder.items.map(item => `${item.productName} (x${item.quantity})`).join(', '),
                         settlement: settlementAmount,
@@ -192,7 +194,7 @@ async function handleWeeklyAudit() {
             }
             
             showNotification(`Found ${foundMatches} matching orders in the database.`);
-            displayWeeklyResults(weeklyResults, totalWeeklyProfit, totalWeeklyCost, foundMatches);
+            displayWeeklyResults(weeklyResultsData, totalWeeklyProfit, totalWeeklyCost, foundMatches);
         } catch (error) {
             console.error("Error processing weekly report:", error);
             alert(`Error: ${error.message}`);
@@ -474,6 +476,9 @@ function uiStopLoading() {
         copyBtn.disabled = false;
         saveOrdersBtn.disabled = false;
     }
+    if(weeklyResultsData.length > 0) {
+        copyWeeklyBtn.disabled = false;
+    }
 }
 
 function uiStartEditMode() {
@@ -556,11 +561,12 @@ function displayWeeklyResults(results, totalProfit, totalCost, orderCount) {
     });
 
     weeklyResultsSection.classList.remove('hidden');
+    copyWeeklyBtn.disabled = false;
 }
 
 
 /**
- * Generates a clean HTML version of the report and copies it to the clipboard.
+ * Generates a clean HTML version of the daily report and copies it to the clipboard.
  */
 function copyReportToClipboard() {
     if (processedOrdersData.length === 0) {
@@ -624,6 +630,74 @@ function copyReportToClipboard() {
     try {
         document.execCommand('copy');
         showNotification('✅ Report copied to clipboard!');
+    } catch (err) {
+        console.error('Failed to copy text: ', err);
+        showNotification('❌ Failed to copy report.', true);
+    }
+
+    document.body.removeChild(tempEl);
+}
+
+/**
+ * Generates a clean HTML version of the weekly report and copies it to the clipboard.
+ */
+function copyWeeklyReportToClipboard() {
+    if (weeklyResultsData.length === 0) {
+        alert("No weekly data to copy. Please calculate the weekly profit first.");
+        return;
+    }
+
+    const formatCurrency = (num) => `฿${num.toFixed(2)}`;
+    const totalProfit = weeklyResultsData.reduce((sum, result) => sum + result.profit, 0);
+    const totalCost = weeklyResultsData.reduce((sum, result) => sum + result.cost, 0);
+
+    let htmlString = `
+        <h1>Weekly Profit Summary</h1>
+        <p><strong>Total Weekly Profit:</strong> ${formatCurrency(totalProfit)}</p>
+        <p><strong>Total Cost:</strong> ${formatCurrency(totalCost)}</p>
+        <p><strong>Total Orders Found:</strong> ${weeklyResultsData.length}</p>
+        <br>
+        <table border="1" style="border-collapse: collapse; width: 100%;">
+            <thead>
+                <tr>
+                    <th style="padding: 8px; text-align: left;">Order ID</th>
+                    <th style="padding: 8px; text-align: left;">Product</th>
+                    <th style="padding: 8px; text-align: left;">Total Settlement</th>
+                    <th style="padding: 8px; text-align: left;">Cost</th>
+                    <th style="padding: 8px; text-align: left;">Profit</th>
+                </tr>
+            </thead>
+            <tbody>
+    `;
+
+    weeklyResultsData.forEach(result => {
+        htmlString += `
+            <tr>
+                <td style="padding: 8px;">${result.orderId}</td>
+                <td style="padding: 8px;">${result.products}</td>
+                <td style="padding: 8px;">${formatCurrency(result.settlement)}</td>
+                <td style="padding: 8px;">${formatCurrency(result.cost)}</td>
+                <td style="padding: 8px;">${formatCurrency(result.profit)}</td>
+            </tr>
+        `;
+    });
+
+    htmlString += `</tbody></table>`;
+
+    const tempEl = document.createElement('div');
+    tempEl.style.position = 'absolute';
+    tempEl.style.left = '-9999px';
+    tempEl.innerHTML = htmlString;
+    document.body.appendChild(tempEl);
+    
+    const range = document.createRange();
+    range.selectNode(tempEl);
+    window.getSelection().removeAllRanges();
+    window.getSelection().addRange(range);
+    
+    try {
+        document.execCommand('copy');
+        showNotification('✅ Weekly report copied to clipboard!');
     } catch (err) {
         console.error('Failed to copy text: ', err);
         showNotification('❌ Failed to copy report.', true);
@@ -751,8 +825,10 @@ async function initialize() {
     copyBtn.addEventListener('click', copyReportToClipboard);
     saveOrdersBtn.addEventListener('click', saveOrdersToCloud);
     calculateProfitBtn.addEventListener('click', handleWeeklyAudit);
+    copyWeeklyBtn.addEventListener('click', copyWeeklyReportToClipboard);
     copyBtn.disabled = true;
     saveOrdersBtn.disabled = true;
+    copyWeeklyBtn.disabled = true;
 
     editDataBtn.addEventListener('click', uiStartEditMode);
     saveDataBtn.addEventListener('click', updateAndSaveFromDOM);
