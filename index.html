@@ -134,10 +134,18 @@
                              <h2 class="text-2xl font-bold text-gray-800">Weekly Profit Report</h2>
                              <hr class="my-4">
                         </div>
-                        <div class="flex justify-center mb-8">
-                             <div class="bg-green-100 p-4 rounded-lg shadow-sm text-center">
+                        <div id="weekly-summary" class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 text-center">
+                            <div class="bg-green-100 p-4 rounded-lg shadow-sm">
                                 <h3 class="text-sm font-medium text-green-800 uppercase">Total Weekly Profit</h3>
                                 <p id="total-weekly-profit" class="text-2xl font-bold text-green-900">฿0.00</p>
+                            </div>
+                            <div class="bg-red-100 p-4 rounded-lg shadow-sm">
+                                <h3 class="text-sm font-medium text-red-800 uppercase">Total Cost</h3>
+                                <p id="total-weekly-cost" class="text-2xl font-bold text-red-900">฿0.00</p>
+                            </div>
+                            <div class="bg-gray-200 p-4 rounded-lg shadow-sm">
+                                <h3 class="text-sm font-medium text-gray-800 uppercase">Total Orders Found</h3>
+                                <p id="total-weekly-orders" class="text-2xl font-bold text-gray-900">0</p>
                             </div>
                         </div>
                         <div class="overflow-x-auto rounded-lg border border-gray-200">
