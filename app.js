@@ -29,7 +29,9 @@ const saveOrdersBtn = document.getElementById('save-orders-btn');
 const orderTextArea = document.getElementById('order-text');
 const resultsSection = document.getElementById('results-section');
 const resultsTableBody = document.getElementById('results-table-body');
-const loadingDiv = document.getElementById('loading');
+const loadingDiv = document.getElementById('progress-overlay'); // Changed to progress overlay
+const progressBar = document.getElementById('progress-bar');
+const progressText = document.getElementById('progress-text');
 const totalRevenueEl = document.getElementById('total-revenue');
 const totalCostEl = document.getElementById('total-cost');
 const totalOrdersEl = document.getElementById('total-orders');
@@ -73,9 +75,8 @@ let auth;
  */
 async function handleProcessOrders() {
     processedOrdersData = [];
-    uiStartLoading();
+    uiStartLoading("Processing Daily Orders...");
     
-    // Use setTimeout to ensure the UI updates (loading spinner shows) before heavy processing begins.
     setTimeout(async () => {
         const orderText = orderTextArea.value;
         if (!orderText.trim()) {
@@ -120,7 +121,7 @@ async function handleProcessOrders() {
         } finally {
             uiStopLoading();
         }
-    }, 10); // A small delay is enough
+    }, 100);
 }
 
 /**
@@ -133,9 +134,8 @@ async function handleWeeklyAudit() {
         return;
     }
 
-    uiStartLoading();
+    uiStartLoading("Processing Weekly Report...");
 
-    // Use setTimeout to ensure the UI updates (loading spinner shows) before file reading begins.
     setTimeout(() => {
         const reader = new FileReader();
         reader.onload = async (e) => {
@@ -208,7 +208,7 @@ async function handleWeeklyAudit() {
             }
         };
         reader.readAsArrayBuffer(file);
-    }, 10);
+    }, 100);
 }
 
 // ===================================
@@ -429,7 +429,7 @@ async function saveOrdersToCloud() {
         return;
     }
 
-    uiStartLoading();
+    uiStartLoading("Saving Orders...");
     const userId = auth.currentUser.uid;
     const batch = writeBatch(db);
 
@@ -463,8 +463,17 @@ async function saveOrdersToCloud() {
 // == UI / VIEW FUNCTIONS
 // ===================================
 
-function uiStartLoading() {
+function uiStartLoading(message = "Processing...") {
+    progressText.textContent = message;
+    progressBar.style.transitionDuration = '0s';
+    progressBar.style.width = '0%';
     loadingDiv.classList.remove('hidden');
+    
+    setTimeout(() => {
+        progressBar.style.transitionDuration = '1.5s';
+        progressBar.style.width = '90%';
+    }, 10);
+
     resultsSection.classList.add('hidden');
     weeklyResultsSection.classList.add('hidden');
     processBtn.disabled = true;
@@ -475,16 +484,21 @@ function uiStartLoading() {
 }
 
 function uiStopLoading() {
-    loadingDiv.classList.add('hidden');
-    processBtn.disabled = false;
-    calculateProfitBtn.disabled = false;
-    if (processedOrdersData.length > 0) {
-        copyBtn.disabled = false;
-        saveOrdersBtn.disabled = false;
-    }
-    if(weeklyResultsData.length > 0) {
-        copyWeeklyBtn.disabled = false;
-    }
+    progressBar.style.transitionDuration = '0.3s';
+    progressBar.style.width = '100%';
+
+    setTimeout(() => {
+        loadingDiv.classList.add('hidden');
+        processBtn.disabled = false;
+        calculateProfitBtn.disabled = false;
+        if (processedOrdersData.length > 0) {
+            copyBtn.disabled = false;
+            saveOrdersBtn.disabled = false;
+        }
+        if(weeklyResultsData.length > 0) {
+            copyWeeklyBtn.disabled = false;
+        }
+    }, 500);
 }
 
 function uiStartEditMode() {
