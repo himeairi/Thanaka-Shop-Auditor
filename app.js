@@ -408,6 +408,7 @@ function copyReportToClipboard() {
         <table border="1" style="border-collapse: collapse; width: 100%;">
             <thead>
                 <tr>
+                    <th style="padding: 8px; text-align: left;">Image</th>
                     <th style="padding: 8px; text-align: left;">Order ID</th>
                     <th style="padding: 8px; text-align: left;">Product</th>
                     <th style="padding: 8px; text-align: left;">Qty</th>
@@ -421,8 +422,10 @@ function copyReportToClipboard() {
     processedOrdersData.forEach(order => {
         const productCellContent = order.items.map(item => `${item.matchedProduct.Product_Name} (x${item.quantity})`).join('<br>');
         const totalQuantity = order.items.reduce((sum, item) => sum + item.quantity, 0);
+        const imageUrl = order.items[0]?.matchedProduct.Image_URL || 'https://placehold.co/40x40/EEE/333?text=N/A';
         htmlString += `
             <tr>
+                <td style="padding: 8px;"><img src="${imageUrl}" width="40" height="40"></td>
                 <td style="padding: 8px;">${order.orderId}</td>
                 <td style="padding: 8px;">${productCellContent}</td>
                 <td style="padding: 8px;">${totalQuantity}</td>
@@ -634,12 +637,10 @@ async function initialize() {
     orderTextArea.value = sampleOrders;
     
     try {
-        // Initialize Firebase using the modern modular functions
         const app = initializeApp(firebaseConfig);
         auth = getAuth(app);
         db = getFirestore(app);
 
-        // Sign in anonymously to get a user ID
         await signInAnonymously(auth);
         onAuthStateChanged(auth, async user => {
             if (user) {
@@ -650,7 +651,6 @@ async function initialize() {
     } catch (e) {
         console.error("Firebase initialization failed:", e);
         showNotification('❌ Cloud connection failed. Using local data.', true);
-        // Fallback to local data if Firebase fails
         masterProductData = parseProductSheet(productCSVData);
         renderProductTable(false);
     }
