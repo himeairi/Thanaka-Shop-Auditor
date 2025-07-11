@@ -43,6 +43,9 @@ const dailyAuditTab = document.getElementById('daily-audit-tab');
 const weeklyAuditTab = document.getElementById('weekly-audit-tab');
 const dailyAuditPanel = document.getElementById('daily-audit');
 const weeklyAuditPanel = document.getElementById('weekly-audit');
+const calculateProfitBtn = document.getElementById('calculate-profit-btn');
+const weeklyReportFile = document.getElementById('weekly-report-file');
+
 
 // ===================================
 // == STATE
@@ -340,7 +343,7 @@ async function saveOrdersToCloud() {
             })),
             savedAt: new Date()
         };
-        batch.set(docRef, dataToSave, { merge: true }); // Use merge to avoid overwriting identical orders
+        batch.set(docRef, dataToSave, { merge: true });
     });
 
     try {
@@ -404,7 +407,6 @@ function displayResults(orders) {
 
     totalRevenueEl.textContent = formatCurrency(totalRevenue);
     totalCostEl.textContent = formatCurrency(totalCost);
-    if(totalProfitEl) totalProfitEl.parentElement.classList.add('hidden');
     totalOrdersEl.textContent = orders.length;
 
     resultsTableBody.innerHTML = '';
@@ -502,7 +504,6 @@ function copyReportToClipboard() {
 
     document.body.removeChild(tempEl);
 }
-
 
 /**
  * Renders the product data table.
