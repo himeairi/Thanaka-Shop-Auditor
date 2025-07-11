@@ -26,7 +26,6 @@ const firebaseConfig = {
 const processBtn = document.getElementById('process-btn');
 const copyBtn = document.getElementById('copy-btn');
 const saveOrdersBtn = document.getElementById('save-orders-btn');
-const exportBtn = document.getElementById('export-btn');
 const orderTextArea = document.getElementById('order-text');
 const resultsSection = document.getElementById('results-section');
 const resultsTableBody = document.getElementById('results-table-body');
@@ -51,6 +50,8 @@ const weeklyReportFile = document.getElementById('weekly-report-file');
 const weeklyResultsSection = document.getElementById('weekly-results-section');
 const weeklyResultsTableBody = document.getElementById('weekly-results-table-body');
 const totalWeeklyProfitEl = document.getElementById('total-weekly-profit');
+const totalWeeklyCostEl = document.getElementById('total-weekly-cost');
+const totalWeeklyOrdersEl = document.getElementById('total-weekly-orders');
 
 
 // ===================================
@@ -137,19 +138,17 @@ async function handleWeeklyAudit() {
             const sheetName = workbook.SheetNames[0];
             const worksheet = workbook.Sheets[sheetName];
             
-            // FIXED: Read the sheet as an array of arrays to preserve large numbers as strings.
             const reportData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
 
-            if (reportData.length < 2) { // Must have at least a header and one data row
+            if (reportData.length < 2) {
                 throw new Error("The uploaded spreadsheet is empty or has no data rows.");
             }
             
             const headers = reportData[0];
             console.log("Spreadsheet Headers:", headers);
 
-            // Find the column index for our key headers
-            const orderIdIndex = headers.findIndex(h => h.trim() === "Order/adjustment ID");
-            const settlementIndex = headers.findIndex(h => h.trim() === "Total settlement amount");
+            const orderIdIndex = headers.findIndex(h => h && h.trim() === "Order/adjustment ID");
+            const settlementIndex = headers.findIndex(h => h && h.trim() === "Total settlement amount");
 
             if (orderIdIndex === -1) {
                  throw new Error(`Could not find a column named exactly "Order/adjustment ID". Please check the spreadsheet.`);
@@ -159,10 +158,11 @@ async function handleWeeklyAudit() {
             }
 
             let totalWeeklyProfit = 0;
+            let totalWeeklyCost = 0;
             const weeklyResults = [];
             let foundMatches = 0;
 
-            const dataRows = reportData.slice(1); // All rows except the header
+            const dataRows = reportData.slice(1);
 
             for (const row of dataRows) {
                 const orderId = String(row[orderIdIndex]).trim();
@@ -179,6 +179,7 @@ async function handleWeeklyAudit() {
                     const savedOrder = savedOrderDoc.data();
                     const profit = settlementAmount - savedOrder.cost;
                     totalWeeklyProfit += profit;
+                    totalWeeklyCost += savedOrder.cost;
                     
                     weeklyResults.push({
                         orderId: savedOrder.orderId,
@@ -191,7 +192,7 @@ async function handleWeeklyAudit() {
             }
             
             showNotification(`Found ${foundMatches} matching orders in the database.`);
-            displayWeeklyResults(weeklyResults, totalWeeklyProfit);
+            displayWeeklyResults(weeklyResults, totalWeeklyProfit, totalWeeklyCost, foundMatches);
         } catch (error) {
             console.error("Error processing weekly report:", error);
             alert(`Error: ${error.message}`);
@@ -531,10 +532,14 @@ function displayResults(orders) {
  * Renders the weekly profit results into its dedicated table.
  * @param {Array<Object>} results
  * @param {number} totalProfit
+ * @param {number} totalCost
+ * @param {number} orderCount
  */
-function displayWeeklyResults(results, totalProfit) {
+function displayWeeklyResults(results, totalProfit, totalCost, orderCount) {
     const formatCurrency = (num) => `฿${num.toFixed(2)}`;
     totalWeeklyProfitEl.textContent = formatCurrency(totalProfit);
+    totalWeeklyCostEl.textContent = formatCurrency(totalCost);
+    totalWeeklyOrdersEl.textContent = orderCount;
 
     weeklyResultsTableBody.innerHTML = '';
     results.forEach(result => {
