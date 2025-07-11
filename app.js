@@ -5,7 +5,7 @@ import { productCSVData, sampleOrders } from './data.js';
 // ===================================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.6.10/firebase-app.js";
 import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9.6.10/firebase-auth.js";
-import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/9.6.10/firebase-firestore.js";
+import { getFirestore, doc, getDoc, setDoc, writeBatch } from "https://www.gstatic.com/firebasejs/9.6.10/firebase-firestore.js";
 
 // ===================================
 // == FIREBASE CONFIG
@@ -25,14 +25,13 @@ const firebaseConfig = {
 // ===================================
 const processBtn = document.getElementById('process-btn');
 const copyBtn = document.getElementById('copy-btn');
-const exportBtn = document.getElementById('export-btn');
+const saveOrdersBtn = document.getElementById('save-orders-btn');
 const orderTextArea = document.getElementById('order-text');
 const resultsSection = document.getElementById('results-section');
 const resultsTableBody = document.getElementById('results-table-body');
 const loadingDiv = document.getElementById('loading');
 const totalRevenueEl = document.getElementById('total-revenue');
 const totalCostEl = document.getElementById('total-cost');
-const totalProfitEl = document.getElementById('total-profit');
 const totalOrdersEl = document.getElementById('total-orders');
 const editDataBtn = document.getElementById('edit-data-btn');
 const saveDataBtn = document.getElementById('save-data-btn');
@@ -40,6 +39,10 @@ const cancelDataBtn = document.getElementById('cancel-data-btn');
 const resetDataBtn = document.getElementById('reset-data-btn');
 const productDataTableContainer = document.getElementById('product-data-table-container');
 const notificationPopup = document.getElementById('notification-popup');
+const dailyAuditTab = document.getElementById('daily-audit-tab');
+const weeklyAuditTab = document.getElementById('weekly-audit-tab');
+const dailyAuditPanel = document.getElementById('daily-audit');
+const weeklyAuditPanel = document.getElementById('weekly-audit');
 
 // ===================================
 // == STATE
@@ -309,6 +312,48 @@ async function resetProductData() {
     }
 }
 
+/**
+ * Saves the currently processed orders to a new 'processedOrders' collection in Firestore.
+ */
+async function saveOrdersToCloud() {
+    if (!auth.currentUser) {
+        alert("Cannot save orders. Not connected to the database. Please refresh the page and try again.");
+        return;
+    }
+    if (processedOrdersData.length === 0) {
+        alert("No processed orders to save.");
+        return;
+    }
+
+    uiStartLoading();
+    const userId = auth.currentUser.uid;
+    const batch = writeBatch(db);
+
+    processedOrdersData.forEach(order => {
+        const docRef = doc(db, "users", userId, "processedOrders", order.orderId);
+        const dataToSave = {
+            orderId: order.orderId,
+            cost: order.cost,
+            items: order.items.map(item => ({
+                productName: item.matchedProduct.Product_Name,
+                quantity: item.quantity
+            })),
+            savedAt: new Date()
+        };
+        batch.set(docRef, dataToSave, { merge: true }); // Use merge to avoid overwriting identical orders
+    });
+
+    try {
+        await batch.commit();
+        showNotification(`✅ Successfully saved ${processedOrdersData.length} orders to the cloud.`);
+    } catch (error) {
+        console.error("Error saving orders to Firestore: ", error);
+        showNotification("❌ Error saving orders to the cloud.", true);
+    } finally {
+        uiStopLoading();
+    }
+}
+
 
 // ===================================
 // == UI / VIEW FUNCTIONS
@@ -319,9 +364,8 @@ function uiStartLoading() {
     resultsSection.classList.add('hidden');
     processBtn.disabled = true;
     copyBtn.disabled = true;
-    exportBtn.disabled = true;
+    saveOrdersBtn.disabled = true;
     resultsTableBody.innerHTML = '';
-    processedOrdersData = [];
 }
 
 function uiStopLoading() {
@@ -329,7 +373,7 @@ function uiStopLoading() {
     processBtn.disabled = false;
     if (processedOrdersData.length > 0) {
         copyBtn.disabled = false;
-        exportBtn.disabled = false;
+        saveOrdersBtn.disabled = false;
     }
 }
 
@@ -459,106 +503,6 @@ function copyReportToClipboard() {
     document.body.removeChild(tempEl);
 }
 
-/**
- * Generates and triggers the download of a .docx file.
- */
-async function exportToWord() {
-    if (processedOrdersData.length === 0) {
-        alert("No data to export. Please process orders first.");
-        return;
-    }
-    
-    if (typeof window.docx === 'undefined') {
-        alert('The export library is still loading. Please wait a moment and try again.');
-        return;
-    }
-
-    uiStartLoading();
-    
-    const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, HeadingLevel } = window.docx;
-    const formatCurrency = (num) => `฿${num.toFixed(2)}`;
-    const totalRevenue = processedOrdersData.reduce((sum, order) => sum + order.salePrice, 0);
-    const totalCost = processedOrdersData.reduce((sum, order) => sum + order.cost, 0);
-
-    const summaryItems = [
-        new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun("Sales Audit Summary")] }),
-        new Paragraph({ children: [new TextRun({ text: `Total Revenue: ${formatCurrency(totalRevenue)}`, bold: true })] }),
-        new Paragraph({ children: [new TextRun({ text: `Total Cost: ${formatCurrency(totalCost)}`, bold: true })] }),
-        new Paragraph({ children: [new TextRun({ text: `Total Orders: ${processedOrdersData.length}`, bold: true })] }),
-        new Paragraph({ text: "" }),
-    ];
-
-    const tableHeader = new TableRow({
-        children: [
-            new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: "Details", bold: true })] })] }),
-            new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: "Financials", bold: true })] })] }),
-        ],
-        tableHeader: true,
-    });
-    
-    const tableRows = [tableHeader];
-
-    for (const order of processedOrdersData) {
-        const detailsParagraphs = [
-            new Paragraph({ children: [new TextRun({ text: `Order ID: ${order.orderId}`, bold: true })] })
-        ];
-
-        order.items.forEach(item => {
-            detailsParagraphs.push(new Paragraph(`${item.matchedProduct.Product_Name} (x${item.quantity})`));
-            if (item.matchedProduct.Image_URL) {
-                detailsParagraphs.push(new Paragraph({ 
-                    children: [new TextRun({ text: `Image: ${item.matchedProduct.Image_URL}`, style: "Hyperlink" })],
-                }));
-            }
-        });
-        
-        const detailsCell = new TableCell({ children: detailsParagraphs });
-
-        const financialsCell = new TableCell({
-            children: [
-                new Paragraph(`Sale: ${formatCurrency(order.salePrice)}`),
-                new Paragraph(`Cost: ${formatCurrency(order.cost)}`),
-            ],
-        });
-
-        tableRows.push(new TableRow({ children: [detailsCell, financialsCell] }));
-    }
-    
-    const table = new Table({ rows: tableRows, width: { size: 100, type: WidthType.PERCENTAGE } });
-    const doc = new Document({
-        styles: {
-            hyperlink: {
-                "Default Paragraph Font": {
-                    run: {
-                        color: "0000FF",
-                        underline: {
-                            type: "single",
-                            color: "0000FF",
-                        },
-                    },
-                },
-            },
-        },
-        sections: [{ children: [...summaryItems, table] }]
-    });
-    
-    try {
-        const blob = await Packer.toBlob(doc);
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `Sales_Report_${new Date().toISOString().split('T')[0]}.docx`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-    } catch (e) {
-        console.error("Error packing document:", e);
-        alert("Failed to generate the Word document.");
-    } finally {
-        uiStopLoading();
-    }
-}
 
 /**
  * Renders the product data table.
@@ -629,6 +573,24 @@ function showNotification(message, isError = false) {
     }, 3000);
 }
 
+function switchTab(activeTab) {
+    if (activeTab === 'daily') {
+        dailyAuditTab.classList.add('border-indigo-500', 'text-indigo-600');
+        dailyAuditTab.classList.remove('border-transparent', 'hover:text-gray-600', 'hover:border-gray-300');
+        weeklyAuditTab.classList.add('border-transparent', 'hover:text-gray-600', 'hover:border-gray-300');
+        weeklyAuditTab.classList.remove('border-indigo-500', 'text-indigo-600');
+        dailyAuditPanel.classList.remove('hidden');
+        weeklyAuditPanel.classList.add('hidden');
+    } else { // weekly
+        weeklyAuditTab.classList.add('border-indigo-500', 'text-indigo-600');
+        weeklyAuditTab.classList.remove('border-transparent', 'hover:text-gray-600', 'hover:border-gray-300');
+        dailyAuditTab.classList.add('border-transparent', 'hover:text-gray-600', 'hover:border-gray-300');
+        dailyAuditTab.classList.remove('border-indigo-500', 'text-indigo-600');
+        weeklyAuditPanel.classList.remove('hidden');
+        dailyAuditPanel.classList.add('hidden');
+    }
+}
+
 // ===================================
 // == INITIALIZATION
 // ===================================
@@ -657,14 +619,21 @@ async function initialize() {
     
     processBtn.addEventListener('click', handleProcessOrders);
     copyBtn.addEventListener('click', copyReportToClipboard);
-    exportBtn.addEventListener('click', exportToWord);
+    saveOrdersBtn.addEventListener('click', saveOrdersToCloud);
     copyBtn.disabled = true;
-    exportBtn.disabled = true;
+    saveOrdersBtn.disabled = true;
 
     editDataBtn.addEventListener('click', uiStartEditMode);
     saveDataBtn.addEventListener('click', updateAndSaveFromDOM);
     cancelDataBtn.addEventListener('click', uiEndEditMode);
     resetDataBtn.addEventListener('click', resetProductData);
+
+    // Tab listeners
+    dailyAuditTab.addEventListener('click', () => switchTab('daily'));
+    weeklyAuditTab.addEventListener('click', () => switchTab('weekly'));
+
+    // Set initial tab state
+    switchTab('daily');
 }
 
 initialize();
