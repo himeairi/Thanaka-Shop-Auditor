@@ -81,7 +81,7 @@ async function handleProcessOrders() {
             }
             
             order.cost = currentOrderTotalCost;
-            order.profit = order.salePrice - order.cost;
+            // Profit calculation is removed
             
             totalRevenue += order.salePrice;
             totalCost += order.cost;
@@ -238,7 +238,7 @@ async function loadDataFromFirestore() {
         showNotification('✅ Loaded saved data from cloud.');
     } else {
         masterProductData = parseProductSheet(productCSVData);
-        await saveMasterDataToFirestore(); // Use the new function to save the default data
+        await saveMasterDataToFirestore();
         showNotification('No saved data found. Loaded default data and saved to cloud.');
     }
     renderProductTable(false);
@@ -280,7 +280,6 @@ async function saveMasterDataToFirestore() {
     const userId = auth.currentUser.uid;
     const docRef = db.collection('productData').doc(userId);
     try {
-        // This function now only saves the data held in the master variable.
         await docRef.set({ products: masterProductData.products });
         showNotification('✅ Product data saved to cloud!');
     } catch (error) {
@@ -351,28 +350,30 @@ function uiEndEditMode() {
 function displayResults(orders) {
     const totalRevenue = orders.reduce((sum, order) => sum + order.salePrice, 0);
     const totalCost = orders.reduce((sum, order) => sum + order.cost, 0);
-    const totalProfit = totalRevenue - totalCost;
     const formatCurrency = (num) => `฿${num.toFixed(2)}`;
 
     totalRevenueEl.textContent = formatCurrency(totalRevenue);
     totalCostEl.textContent = formatCurrency(totalCost);
-    totalProfitEl.textContent = formatCurrency(totalProfit);
+    // Remove profit display
+    if(totalProfitEl) totalProfitEl.parentElement.classList.add('hidden');
     totalOrdersEl.textContent = orders.length;
 
+    resultsTableBody.innerHTML = ''; // Clear previous results
     orders.forEach(order => {
         const row = document.createElement('tr');
         row.className = 'hover:bg-gray-50';
 
         const productCellContent = order.items.map(item => `${item.matchedProduct.Product_Name} (x${item.quantity})`).join('<br>');
         const totalQuantity = order.items.reduce((sum, item) => sum + item.quantity, 0);
+        const imageUrl = order.items[0]?.matchedProduct.Image_URL; // Get image of first item
 
         row.innerHTML = `
+            <td class="px-4 py-3"><img src="${imageUrl || 'https://placehold.co/40x40/EEE/333?text=N/A'}" alt="Product Image" class="h-10 w-10 object-cover rounded"></td>
             <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-800">${order.orderId}</td>
             <td class="px-4 py-3 text-sm text-gray-600">${productCellContent}</td>
             <td class="px-4 py-3 text-sm text-gray-800 text-center">${totalQuantity}</td>
             <td class="px-4 py-3 text-sm text-gray-800">${formatCurrency(order.salePrice)}</td>
             <td class="px-4 py-3 text-sm text-red-600">${formatCurrency(order.cost)}</td>
-            <td class="px-4 py-3 text-sm font-bold ${order.profit >= 0 ? 'text-green-600' : 'text-red-700'}">${formatCurrency(order.profit)}</td>
         `;
         resultsTableBody.appendChild(row);
     });
@@ -392,13 +393,11 @@ function copyReportToClipboard() {
     const formatCurrency = (num) => `฿${num.toFixed(2)}`;
     const totalRevenue = processedOrdersData.reduce((sum, order) => sum + order.salePrice, 0);
     const totalCost = processedOrdersData.reduce((sum, order) => sum + order.cost, 0);
-    const totalProfit = totalRevenue - totalCost;
 
     let htmlString = `
         <h1>Sales Audit Summary</h1>
         <p><strong>Total Revenue:</strong> ${formatCurrency(totalRevenue)}</p>
         <p><strong>Total Cost:</strong> ${formatCurrency(totalCost)}</p>
-        <p><strong>Total Profit:</strong> ${formatCurrency(totalProfit)}</p>
         <p><strong>Total Orders:</strong> ${processedOrdersData.length}</p>
         <br>
         <table border="1" style="border-collapse: collapse; width: 100%;">
@@ -409,7 +408,6 @@ function copyReportToClipboard() {
                     <th style="padding: 8px; text-align: left;">Qty</th>
                     <th style="padding: 8px; text-align: left;">Sale Price</th>
                     <th style="padding: 8px; text-align: left;">Total Cost</th>
-                    <th style="padding: 8px; text-align: left;">Profit</th>
                 </tr>
             </thead>
             <tbody>
@@ -425,7 +423,6 @@ function copyReportToClipboard() {
                 <td style="padding: 8px;">${totalQuantity}</td>
                 <td style="padding: 8px;">${formatCurrency(order.salePrice)}</td>
                 <td style="padding: 8px;">${formatCurrency(order.cost)}</td>
-                <td style="padding: 8px;">${formatCurrency(order.profit)}</td>
             </tr>
         `;
     });
@@ -474,13 +471,11 @@ async function exportToWord() {
     const formatCurrency = (num) => `฿${num.toFixed(2)}`;
     const totalRevenue = processedOrdersData.reduce((sum, order) => sum + order.salePrice, 0);
     const totalCost = processedOrdersData.reduce((sum, order) => sum + order.cost, 0);
-    const totalProfit = totalRevenue - totalCost;
 
     const summaryItems = [
         new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun("Sales Audit Summary")] }),
         new Paragraph({ children: [new TextRun({ text: `Total Revenue: ${formatCurrency(totalRevenue)}`, bold: true })] }),
         new Paragraph({ children: [new TextRun({ text: `Total Cost: ${formatCurrency(totalCost)}`, bold: true })] }),
-        new Paragraph({ children: [new TextRun({ text: `Total Profit: ${formatCurrency(totalProfit)}`, bold: true })] }),
         new Paragraph({ children: [new TextRun({ text: `Total Orders: ${processedOrdersData.length}`, bold: true })] }),
         new Paragraph({ text: "" }),
     ];
@@ -515,7 +510,6 @@ async function exportToWord() {
             children: [
                 new Paragraph(`Sale: ${formatCurrency(order.salePrice)}`),
                 new Paragraph(`Cost: ${formatCurrency(order.cost)}`),
-                new Paragraph({ children: [new TextRun({ text: `Profit: ${formatCurrency(order.profit)}`, bold: true })] }),
             ],
         });
 
@@ -635,12 +629,10 @@ async function initialize() {
     orderTextArea.value = sampleOrders;
     
     try {
-        // Initialize Firebase
         firebase.initializeApp(firebaseConfig);
         auth = firebase.auth();
         db = firebase.firestore();
 
-        // Sign in anonymously to get a user ID
         await auth.signInAnonymously();
         auth.onAuthStateChanged(async user => {
             if (user) {
@@ -651,7 +643,6 @@ async function initialize() {
     } catch (e) {
         console.error("Firebase initialization failed:", e);
         showNotification('❌ Cloud connection failed. Using local data.', true);
-        // Fallback to local data if Firebase fails
         masterProductData = parseProductSheet(productCSVData);
         renderProductTable(false);
     }
@@ -663,7 +654,7 @@ async function initialize() {
     exportBtn.disabled = true;
 
     editDataBtn.addEventListener('click', uiStartEditMode);
-    saveDataBtn.addEventListener('click', updateAndSaveFromDOM); // Use the correct save function
+    saveDataBtn.addEventListener('click', updateAndSaveFromDOM);
     cancelDataBtn.addEventListener('click', uiEndEditMode);
     resetDataBtn.addEventListener('click', resetProductData);
 }
