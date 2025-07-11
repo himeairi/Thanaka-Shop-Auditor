@@ -38,6 +38,14 @@
                 </ul>
             </div>
 
+            <!-- Progress Bar Overlay (Moved to a shared location) -->
+            <div id="progress-overlay" class="hidden fixed inset-0 bg-gray-900 bg-opacity-75 flex-col items-center justify-center z-50">
+                <div class="w-1/2 max-w-lg bg-gray-200 rounded-full h-2.5">
+                    <div id="progress-bar" class="bg-indigo-600 h-2.5 rounded-full transition-all duration-1000 ease-out" style="width: 0%"></div>
+                </div>
+                <p id="progress-text" class="text-white mt-3">Processing...</p>
+            </div>
+
             <!-- ======================= -->
             <!-- == TAB CONTENT PANELS == -->
             <!-- ======================= -->
@@ -60,14 +68,6 @@
                         </div>
                     </div>
                     
-                    <!-- Loading Indicator -->
-                    <div id="loading" class="hidden text-center my-8">
-                        <div class="flex justify-center items-center">
-                            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
-                            <p class="text-gray-600 ml-3">Processing... This may take a moment.</p>
-                        </div>
-                    </div>
-
                     <!-- RESULTS SECTION -->
                     <div id="results-section" class="hidden mt-10">
                         <div class="text-center mb-6">
