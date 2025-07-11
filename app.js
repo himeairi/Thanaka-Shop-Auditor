@@ -145,7 +145,7 @@ async function handleWeeklyAudit() {
             console.log("First row of spreadsheet data:", reportData[0]);
             
             // FIXED: Use exact, case-sensitive keys as provided by the user.
-            const orderIdKey = "Order/adjustment ID ";
+            const orderIdKey = "Order/adjustment ID  ";
             const settlementKey = "Total settlement amount";
 
             if (!reportData[0].hasOwnProperty(orderIdKey)) {
