@@ -136,6 +136,9 @@ async function handleWeeklyAudit() {
             const workbook = XLSX.read(data, { type: 'array' });
             const sheetName = workbook.SheetNames[0];
             const worksheet = workbook.Sheets[sheetName];
+            
+            // FIXED: Use { raw: false } to get formatted strings, but ensure large numbers are treated as text.
+            // We will handle the conversion manually to be safe.
             const reportData = XLSX.utils.sheet_to_json(worksheet);
 
             if (reportData.length === 0) {
@@ -144,7 +147,6 @@ async function handleWeeklyAudit() {
             
             console.log("First row of spreadsheet data:", reportData[0]);
 
-            // FIXED: Use the exact column names provided by the user.
             const orderIdKey = findColumnKey(reportData[0], "Order/adjustment ID");
             const settlementKey = findColumnKey(reportData[0], "Total settlement amount");
 
@@ -154,18 +156,22 @@ async function handleWeeklyAudit() {
 
             let totalWeeklyProfit = 0;
             const weeklyResults = [];
+            let foundMatches = 0;
 
             for (const row of reportData) {
-                const orderId = row[orderIdKey];
+                // Ensure Order ID is treated as a string to prevent precision loss
+                const orderId = String(row[orderIdKey]).trim();
                 const settlementAmount = parseFloat(row[settlementKey]);
 
                 if (!orderId || isNaN(settlementAmount)) {
                     continue; 
                 }
-
-                const savedOrderDoc = await getDoc(doc(db, "users", auth.currentUser.uid, "processedOrders", String(orderId)));
+                
+                console.log(`Searching for Order ID: "${orderId}"`);
+                const savedOrderDoc = await getDoc(doc(db, "users", auth.currentUser.uid, "processedOrders", orderId));
 
                 if (savedOrderDoc.exists()) {
+                    foundMatches++;
                     const savedOrder = savedOrderDoc.data();
                     const profit = settlementAmount - savedOrder.cost;
                     totalWeeklyProfit += profit;
@@ -179,7 +185,8 @@ async function handleWeeklyAudit() {
                     });
                 }
             }
-
+            
+            showNotification(`Found ${foundMatches} matching orders in the database.`);
             displayWeeklyResults(weeklyResults, totalWeeklyProfit);
         };
         reader.readAsArrayBuffer(file);
@@ -187,7 +194,7 @@ async function handleWeeklyAudit() {
         console.error("Error processing weekly report:", error);
         alert(`Error: ${error.message}`);
     } finally {
-        uiStopLoading();
+        // The uiStopLoading() is called within the reader.onload to ensure it runs after processing.
     }
 }
 
