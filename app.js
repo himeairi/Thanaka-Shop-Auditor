@@ -129,16 +129,13 @@ async function handleWeeklyAudit() {
 
     uiStartLoading();
 
-    try {
-        const reader = new FileReader();
-        reader.onload = async (e) => {
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+        try {
             const data = new Uint8Array(e.target.result);
             const workbook = XLSX.read(data, { type: 'array' });
             const sheetName = workbook.SheetNames[0];
             const worksheet = workbook.Sheets[sheetName];
-            
-            // FIXED: Use { raw: false } to get formatted strings, but ensure large numbers are treated as text.
-            // We will handle the conversion manually to be safe.
             const reportData = XLSX.utils.sheet_to_json(worksheet);
 
             if (reportData.length === 0) {
@@ -146,12 +143,16 @@ async function handleWeeklyAudit() {
             }
             
             console.log("First row of spreadsheet data:", reportData[0]);
+            
+            // FIXED: Use exact, case-sensitive keys as provided by the user.
+            const orderIdKey = "Order/adjustment ID";
+            const settlementKey = "Total settlement amount";
 
-            const orderIdKey = findColumnKey(reportData[0], "Order/adjustment ID");
-            const settlementKey = findColumnKey(reportData[0], "Total settlement amount");
-
-            if (!orderIdKey || !settlementKey) {
-                throw new Error("Could not find 'Order/adjustment ID' or 'Total settlement amount' columns in the spreadsheet.");
+            if (!reportData[0].hasOwnProperty(orderIdKey)) {
+                 throw new Error(`Could not find a column named exactly "${orderIdKey}". Please check the spreadsheet.`);
+            }
+            if (!reportData[0].hasOwnProperty(settlementKey)) {
+                 throw new Error(`Could not find a column named exactly "${settlementKey}". Please check the spreadsheet.`);
             }
 
             let totalWeeklyProfit = 0;
@@ -159,7 +160,6 @@ async function handleWeeklyAudit() {
             let foundMatches = 0;
 
             for (const row of reportData) {
-                // Ensure Order ID is treated as a string to prevent precision loss
                 const orderId = String(row[orderIdKey]).trim();
                 const settlementAmount = parseFloat(row[settlementKey]);
 
@@ -167,7 +167,6 @@ async function handleWeeklyAudit() {
                     continue; 
                 }
                 
-                console.log(`Searching for Order ID: "${orderId}"`);
                 const savedOrderDoc = await getDoc(doc(db, "users", auth.currentUser.uid, "processedOrders", orderId));
 
                 if (savedOrderDoc.exists()) {
@@ -188,35 +187,19 @@ async function handleWeeklyAudit() {
             
             showNotification(`Found ${foundMatches} matching orders in the database.`);
             displayWeeklyResults(weeklyResults, totalWeeklyProfit);
-        };
-        reader.readAsArrayBuffer(file);
-    } catch (error) {
-        console.error("Error processing weekly report:", error);
-        alert(`Error: ${error.message}`);
-    } finally {
-        // The uiStopLoading() is called within the reader.onload to ensure it runs after processing.
-    }
+        } catch (error) {
+            console.error("Error processing weekly report:", error);
+            alert(`Error: ${error.message}`);
+        } finally {
+            uiStopLoading();
+        }
+    };
+    reader.readAsArrayBuffer(file);
 }
 
 // ===================================
 // == DATA HANDLING
 // ===================================
-
-/**
- * Finds the actual key for a column in a data object, ignoring case and spaces.
- * @param {Object} row - A sample row object from the data.
- * @param {string} targetHeader - The desired header name (e.g., "Order ID").
- * @returns {string|null} The actual key or null if not found.
- */
-function findColumnKey(row, targetHeader) {
-    const target = targetHeader.toLowerCase().replace(/[^a-z0-9]/gi, '');
-    for (const key in row) {
-        if (key.toLowerCase().replace(/[^a-z0-9]/gi, '') === target) {
-            return key;
-        }
-    }
-    return null;
-}
 
 /**
  * Parses the product data from a CSV string into a usable format.
