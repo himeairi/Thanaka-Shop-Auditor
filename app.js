@@ -26,7 +26,6 @@ const firebaseConfig = {
 const processBtn = document.getElementById('process-btn');
 const copyBtn = document.getElementById('copy-btn');
 const saveOrdersBtn = document.getElementById('save-orders-btn');
-const exportBtn = document.getElementById('export-btn');
 const orderTextArea = document.getElementById('order-text');
 const resultsSection = document.getElementById('results-section');
 const resultsTableBody = document.getElementById('results-table-body');
@@ -42,8 +41,10 @@ const productDataTableContainer = document.getElementById('product-data-table-co
 const notificationPopup = document.getElementById('notification-popup');
 const dailyAuditTab = document.getElementById('daily-audit-tab');
 const weeklyAuditTab = document.getElementById('weekly-audit-tab');
-const dailyAuditPanel = document.getElementById('daily-audit');
-const weeklyAuditPanel = document.getElementById('weekly-audit');
+const productDataTab = document.getElementById('product-data-tab');
+const dailyAuditPanel = document.getElementById('daily-audit-panel');
+const weeklyAuditPanel = document.getElementById('weekly-audit-panel');
+const productDataPanel = document.getElementById('product-data-panel');
 const calculateProfitBtn = document.getElementById('calculate-profit-btn');
 const weeklyReportFile = document.getElementById('weekly-report-file');
 
@@ -64,7 +65,6 @@ let auth;
  * Main controller to handle the order processing workflow.
  */
 async function handleProcessOrders() {
-    // FIXED: Reset the processed data array at the start of every run.
     processedOrdersData = [];
     uiStartLoading();
     
@@ -577,22 +577,24 @@ function showNotification(message, isError = false) {
     }, 3000);
 }
 
-function switchTab(activeTab) {
-    if (activeTab === 'daily') {
-        dailyAuditTab.classList.add('border-indigo-500', 'text-indigo-600');
-        dailyAuditTab.classList.remove('border-transparent', 'hover:text-gray-600', 'hover:border-gray-300');
-        weeklyAuditTab.classList.add('border-transparent', 'hover:text-gray-600', 'hover:border-gray-300');
-        weeklyAuditTab.classList.remove('border-indigo-500', 'text-indigo-600');
-        dailyAuditPanel.classList.remove('hidden');
-        weeklyAuditPanel.classList.add('hidden');
-    } else { // weekly
-        weeklyAuditTab.classList.add('border-indigo-500', 'text-indigo-600');
-        weeklyAuditTab.classList.remove('border-transparent', 'hover:text-gray-600', 'hover:border-gray-300');
-        dailyAuditTab.classList.add('border-transparent', 'hover:text-gray-600', 'hover:border-gray-300');
-        dailyAuditTab.classList.remove('border-indigo-500', 'text-indigo-600');
-        weeklyAuditPanel.classList.remove('hidden');
-        dailyAuditPanel.classList.add('hidden');
-    }
+function switchTab(activeTabId) {
+    const tabs = [
+        { id: 'daily', tabEl: dailyAuditTab, panelEl: dailyAuditPanel },
+        { id: 'weekly', tabEl: weeklyAuditTab, panelEl: weeklyAuditPanel },
+        { id: 'data', tabEl: productDataTab, panelEl: productDataPanel }
+    ];
+
+    tabs.forEach(tab => {
+        if (tab.id === activeTabId) {
+            tab.tabEl.classList.add('border-indigo-500', 'text-indigo-600');
+            tab.tabEl.classList.remove('border-transparent', 'hover:text-gray-600', 'hover:border-gray-300');
+            tab.panelEl.classList.remove('hidden');
+        } else {
+            tab.tabEl.classList.add('border-transparent', 'hover:text-gray-600', 'hover:border-gray-300');
+            tab.tabEl.classList.remove('border-indigo-500', 'text-indigo-600');
+            tab.panelEl.classList.add('hidden');
+        }
+    });
 }
 
 // ===================================
@@ -635,6 +637,7 @@ async function initialize() {
     // Tab listeners
     dailyAuditTab.addEventListener('click', () => switchTab('daily'));
     weeklyAuditTab.addEventListener('click', () => switchTab('weekly'));
+    productDataTab.addEventListener('click', () => switchTab('data'));
 
     // Set initial tab state
     switchTab('daily');
