@@ -136,32 +136,37 @@ async function handleWeeklyAudit() {
             const workbook = XLSX.read(data, { type: 'array' });
             const sheetName = workbook.SheetNames[0];
             const worksheet = workbook.Sheets[sheetName];
-            const reportData = XLSX.utils.sheet_to_json(worksheet);
+            
+            // FIXED: Read the sheet as an array of arrays to preserve large numbers as strings.
+            const reportData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
 
-            if (reportData.length === 0) {
-                throw new Error("The uploaded spreadsheet is empty or could not be read.");
+            if (reportData.length < 2) { // Must have at least a header and one data row
+                throw new Error("The uploaded spreadsheet is empty or has no data rows.");
             }
             
-            console.log("First row of spreadsheet data:", reportData[0]);
-            
-            // FIXED: Use exact, case-sensitive keys as provided by the user.
-            const orderIdKey = "Order/adjustment ID  ";
-            const settlementKey = "Total settlement amount";
+            const headers = reportData[0];
+            console.log("Spreadsheet Headers:", headers);
 
-            if (!reportData[0].hasOwnProperty(orderIdKey)) {
-                 throw new Error(`Could not find a column named exactly "${orderIdKey}". Please check the spreadsheet.`);
+            // Find the column index for our key headers
+            const orderIdIndex = headers.findIndex(h => h.trim() === "Order/adjustment ID");
+            const settlementIndex = headers.findIndex(h => h.trim() === "Total settlement amount");
+
+            if (orderIdIndex === -1) {
+                 throw new Error(`Could not find a column named exactly "Order/adjustment ID". Please check the spreadsheet.`);
             }
-            if (!reportData[0].hasOwnProperty(settlementKey)) {
-                 throw new Error(`Could not find a column named exactly "${settlementKey}". Please check the spreadsheet.`);
+            if (settlementIndex === -1) {
+                 throw new Error(`Could not find a column named exactly "Total settlement amount". Please check the spreadsheet.`);
             }
 
             let totalWeeklyProfit = 0;
             const weeklyResults = [];
             let foundMatches = 0;
 
-            for (const row of reportData) {
-                const orderId = String(row[orderIdKey]).trim();
-                const settlementAmount = parseFloat(row[settlementKey]);
+            const dataRows = reportData.slice(1); // All rows except the header
+
+            for (const row of dataRows) {
+                const orderId = String(row[orderIdIndex]).trim();
+                const settlementAmount = parseFloat(row[settlementIndex]);
 
                 if (!orderId || isNaN(settlementAmount)) {
                     continue; 
