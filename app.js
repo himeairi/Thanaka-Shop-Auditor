@@ -29,9 +29,10 @@ const saveOrdersBtn = document.getElementById('save-orders-btn');
 const orderTextArea = document.getElementById('order-text');
 const resultsSection = document.getElementById('results-section');
 const resultsTableBody = document.getElementById('results-table-body');
-const loadingDiv = document.getElementById('progress-overlay'); // Changed to progress overlay
-const progressBar = document.getElementById('progress-bar');
-const progressText = document.getElementById('progress-text');
+const dailyLoadingDiv = document.getElementById('daily-loading');
+const dailyProgressBar = document.getElementById('daily-progress-bar');
+const weeklyLoadingDiv = document.getElementById('weekly-loading');
+const weeklyProgressBar = document.getElementById('weekly-progress-bar');
 const totalRevenueEl = document.getElementById('total-revenue');
 const totalCostEl = document.getElementById('total-cost');
 const totalOrdersEl = document.getElementById('total-orders');
@@ -75,13 +76,13 @@ let auth;
  */
 async function handleProcessOrders() {
     processedOrdersData = [];
-    uiStartLoading("Processing Daily Orders...");
+    uiStartLoading('daily');
     
     setTimeout(async () => {
         const orderText = orderTextArea.value;
         if (!orderText.trim()) {
             alert("Please paste your order text.");
-            uiStopLoading();
+            uiStopLoading('daily');
             return;
         }
 
@@ -119,7 +120,7 @@ async function handleProcessOrders() {
             console.error("An error occurred during processing:", error);
             alert(`Error: ${error.message}`);
         } finally {
-            uiStopLoading();
+            uiStopLoading('daily');
         }
     }, 100);
 }
@@ -134,7 +135,7 @@ async function handleWeeklyAudit() {
         return;
     }
 
-    uiStartLoading("Processing Weekly Report...");
+    uiStartLoading('weekly');
 
     setTimeout(() => {
         const reader = new FileReader();
@@ -204,7 +205,7 @@ async function handleWeeklyAudit() {
                 console.error("Error processing weekly report:", error);
                 alert(`Error: ${error.message}`);
             } finally {
-                uiStopLoading();
+                uiStopLoading('weekly');
             }
         };
         reader.readAsArrayBuffer(file);
@@ -463,15 +464,17 @@ async function saveOrdersToCloud() {
 // == UI / VIEW FUNCTIONS
 // ===================================
 
-function uiStartLoading(message = "Processing...") {
-    progressText.textContent = message;
-    progressBar.style.transitionDuration = '0s';
-    progressBar.style.width = '0%';
-    loadingDiv.classList.remove('hidden');
+function uiStartLoading(type) {
+    const bar = type === 'weekly' ? weeklyProgressBar : dailyProgressBar;
+    const container = type === 'weekly' ? weeklyLoadingDiv : dailyLoadingDiv;
+
+    bar.style.transitionDuration = '0s';
+    bar.style.width = '0%';
+    container.classList.remove('hidden');
     
     setTimeout(() => {
-        progressBar.style.transitionDuration = '1.5s';
-        progressBar.style.width = '90%';
+        bar.style.transitionDuration = '0.5s'; // Faster animation
+        bar.style.width = '90%';
     }, 10);
 
     resultsSection.classList.add('hidden');
@@ -484,11 +487,15 @@ function uiStartLoading(message = "Processing...") {
 }
 
 function uiStopLoading() {
-    progressBar.style.transitionDuration = '0.3s';
-    progressBar.style.width = '100%';
-
+    const bars = [dailyProgressBar, weeklyProgressBar];
+    bars.forEach(bar => {
+        bar.style.transitionDuration = '0.3s';
+        bar.style.width = '100%';
+    });
+    
     setTimeout(() => {
-        loadingDiv.classList.add('hidden');
+        dailyLoadingDiv.classList.add('hidden');
+        weeklyLoadingDiv.classList.add('hidden');
         processBtn.disabled = false;
         calculateProfitBtn.disabled = false;
         if (processedOrdersData.length > 0) {
