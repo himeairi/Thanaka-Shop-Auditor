@@ -1,6 +1,13 @@
 import { productCSVData, sampleOrders } from './data.js';
 
 // ===================================
+// == FIREBASE SDK IMPORTS
+// ===================================
+import { initializeApp } from "https://www.gstatic.com/firebasejs/9.6.10/firebase-app.js";
+import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9.6.10/firebase-auth.js";
+import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/9.6.10/firebase-firestore.js";
+
+// ===================================
 // == FIREBASE CONFIG
 // ===================================
 const firebaseConfig = {
@@ -81,7 +88,6 @@ async function handleProcessOrders() {
             }
             
             order.cost = currentOrderTotalCost;
-            // Profit calculation is removed
             
             totalRevenue += order.salePrice;
             totalCost += order.cost;
@@ -226,11 +232,11 @@ async function loadDataFromFirestore() {
         return;
     }
     const userId = auth.currentUser.uid;
-    const docRef = db.collection('productData').doc(userId);
-    const doc = await docRef.get();
+    const docRef = doc(db, 'productData', userId);
+    const docSnap = await getDoc(docRef);
 
-    if (doc.exists && doc.data().products && doc.data().products.length > 0) {
-        const products = doc.data().products;
+    if (docSnap.exists() && docSnap.data().products && docSnap.data().products.length > 0) {
+        const products = docSnap.data().products;
         masterProductData = {
             products,
             skuMap: new Map(products.map(p => [p.SKU, p]))
@@ -278,9 +284,9 @@ async function updateAndSaveFromDOM() {
  */
 async function saveMasterDataToFirestore() {
     const userId = auth.currentUser.uid;
-    const docRef = db.collection('productData').doc(userId);
+    const docRef = doc(db, 'productData', userId);
     try {
-        await docRef.set({ products: masterProductData.products });
+        await setDoc(docRef, { products: masterProductData.products });
         showNotification('✅ Product data saved to cloud!');
     } catch (error) {
         console.error("Error saving data to Firestore: ", error);
@@ -354,18 +360,17 @@ function displayResults(orders) {
 
     totalRevenueEl.textContent = formatCurrency(totalRevenue);
     totalCostEl.textContent = formatCurrency(totalCost);
-    // Remove profit display
     if(totalProfitEl) totalProfitEl.parentElement.classList.add('hidden');
     totalOrdersEl.textContent = orders.length;
 
-    resultsTableBody.innerHTML = ''; // Clear previous results
+    resultsTableBody.innerHTML = '';
     orders.forEach(order => {
         const row = document.createElement('tr');
         row.className = 'hover:bg-gray-50';
 
         const productCellContent = order.items.map(item => `${item.matchedProduct.Product_Name} (x${item.quantity})`).join('<br>');
         const totalQuantity = order.items.reduce((sum, item) => sum + item.quantity, 0);
-        const imageUrl = order.items[0]?.matchedProduct.Image_URL; // Get image of first item
+        const imageUrl = order.items[0]?.matchedProduct.Image_URL;
 
         row.innerHTML = `
             <td class="px-4 py-3"><img src="${imageUrl || 'https://placehold.co/40x40/EEE/333?text=N/A'}" alt="Product Image" class="h-10 w-10 object-cover rounded"></td>
@@ -629,12 +634,14 @@ async function initialize() {
     orderTextArea.value = sampleOrders;
     
     try {
-        firebase.initializeApp(firebaseConfig);
-        auth = firebase.auth();
-        db = firebase.firestore();
+        // Initialize Firebase using the modern modular functions
+        const app = initializeApp(firebaseConfig);
+        auth = getAuth(app);
+        db = getFirestore(app);
 
-        await auth.signInAnonymously();
-        auth.onAuthStateChanged(async user => {
+        // Sign in anonymously to get a user ID
+        await signInAnonymously(auth);
+        onAuthStateChanged(auth, async user => {
             if (user) {
                 showNotification('☁️ Connected to cloud database...');
                 await loadDataFromFirestore();
@@ -643,6 +650,7 @@ async function initialize() {
     } catch (e) {
         console.error("Firebase initialization failed:", e);
         showNotification('❌ Cloud connection failed. Using local data.', true);
+        // Fallback to local data if Firebase fails
         masterProductData = parseProductSheet(productCSVData);
         renderProductTable(false);
     }
