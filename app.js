@@ -473,7 +473,7 @@ function uiStartLoading(type) {
     container.classList.remove('hidden');
     
     setTimeout(() => {
-        bar.style.transitionDuration = '0.5s'; // Faster animation
+        bar.style.transitionDuration = '1.5 s'; // Faster animation
         bar.style.width = '90%';
     }, 10);
 
