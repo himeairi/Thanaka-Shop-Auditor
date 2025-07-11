@@ -47,6 +47,9 @@ const weeklyAuditPanel = document.getElementById('weekly-audit-panel');
 const productDataPanel = document.getElementById('product-data-panel');
 const calculateProfitBtn = document.getElementById('calculate-profit-btn');
 const weeklyReportFile = document.getElementById('weekly-report-file');
+const weeklyResultsSection = document.getElementById('weekly-results-section');
+const weeklyResultsTableBody = document.getElementById('weekly-results-table-body');
+const totalWeeklyProfitEl = document.getElementById('total-weekly-profit');
 
 
 // ===================================
@@ -107,6 +110,70 @@ async function handleProcessOrders() {
 
     } catch (error) {
         console.error("An error occurred during processing:", error);
+        alert(`Error: ${error.message}`);
+    } finally {
+        uiStopLoading();
+    }
+}
+
+/**
+ * Handles the weekly profit calculation workflow.
+ */
+async function handleWeeklyAudit() {
+    const file = weeklyReportFile.files[0];
+    if (!file) {
+        alert("Please upload the weekly report file first.");
+        return;
+    }
+
+    uiStartLoading();
+
+    try {
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+            const sheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[sheetName];
+            const reportData = XLSX.utils.sheet_to_json(worksheet);
+
+            if (reportData.length === 0) {
+                throw new Error("The uploaded spreadsheet is empty or could not be read.");
+            }
+
+            let totalWeeklyProfit = 0;
+            const weeklyResults = [];
+
+            for (const row of reportData) {
+                const orderId = row["Order ID"];
+                const settlementAmount = parseFloat(row["Total Settlement Amount"]);
+
+                if (!orderId || isNaN(settlementAmount)) {
+                    continue; // Skip rows without an order ID or valid settlement amount
+                }
+
+                const savedOrderDoc = await getDoc(doc(db, "users", auth.currentUser.uid, "processedOrders", String(orderId)));
+
+                if (savedOrderDoc.exists()) {
+                    const savedOrder = savedOrderDoc.data();
+                    const profit = settlementAmount - savedOrder.cost;
+                    totalWeeklyProfit += profit;
+                    
+                    weeklyResults.push({
+                        orderId: savedOrder.orderId,
+                        products: savedOrder.items.map(item => `${item.productName} (x${item.quantity})`).join(', '),
+                        settlement: settlementAmount,
+                        cost: savedOrder.cost,
+                        profit: profit
+                    });
+                }
+            }
+
+            displayWeeklyResults(weeklyResults, totalWeeklyProfit);
+        };
+        reader.readAsArrayBuffer(file);
+    } catch (error) {
+        console.error("Error processing weekly report:", error);
         alert(`Error: ${error.message}`);
     } finally {
         uiStopLoading();
@@ -368,15 +435,18 @@ async function saveOrdersToCloud() {
 function uiStartLoading() {
     loadingDiv.classList.remove('hidden');
     resultsSection.classList.add('hidden');
+    weeklyResultsSection.classList.add('hidden');
     processBtn.disabled = true;
     copyBtn.disabled = true;
     saveOrdersBtn.disabled = true;
+    calculateProfitBtn.disabled = true;
     resultsTableBody.innerHTML = '';
 }
 
 function uiStopLoading() {
     loadingDiv.classList.add('hidden');
     processBtn.disabled = false;
+    calculateProfitBtn.disabled = false;
     if (processedOrdersData.length > 0) {
         copyBtn.disabled = false;
         saveOrdersBtn.disabled = false;
@@ -434,6 +504,33 @@ function displayResults(orders) {
 
     resultsSection.classList.remove('hidden');
 }
+
+/**
+ * Renders the weekly profit results into its dedicated table.
+ * @param {Array<Object>} results
+ * @param {number} totalProfit
+ */
+function displayWeeklyResults(results, totalProfit) {
+    const formatCurrency = (num) => `฿${num.toFixed(2)}`;
+    totalWeeklyProfitEl.textContent = formatCurrency(totalProfit);
+
+    weeklyResultsTableBody.innerHTML = '';
+    results.forEach(result => {
+        const row = document.createElement('tr');
+        row.className = 'hover:bg-gray-50';
+        row.innerHTML = `
+            <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-800">${result.orderId}</td>
+            <td class="px-4 py-3 text-sm text-gray-600">${result.products}</td>
+            <td class="px-4 py-3 text-sm text-gray-800">${formatCurrency(result.settlement)}</td>
+            <td class="px-4 py-3 text-sm text-red-600">${formatCurrency(result.cost)}</td>
+            <td class="px-4 py-3 text-sm font-bold ${result.profit >= 0 ? 'text-green-600' : 'text-red-700'}">${formatCurrency(result.profit)}</td>
+        `;
+        weeklyResultsTableBody.appendChild(row);
+    });
+
+    weeklyResultsSection.classList.remove('hidden');
+}
+
 
 /**
  * Generates a clean HTML version of the report and copies it to the clipboard.
@@ -626,6 +723,7 @@ async function initialize() {
     processBtn.addEventListener('click', handleProcessOrders);
     copyBtn.addEventListener('click', copyReportToClipboard);
     saveOrdersBtn.addEventListener('click', saveOrdersToCloud);
+    calculateProfitBtn.addEventListener('click', handleWeeklyAudit);
     copyBtn.disabled = true;
     saveOrdersBtn.disabled = true;
 
