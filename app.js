@@ -142,15 +142,14 @@ async function handleWeeklyAudit() {
                 throw new Error("The uploaded spreadsheet is empty or could not be read.");
             }
             
-            // For debugging: Log the first row to see the exact column names
             console.log("First row of spreadsheet data:", reportData[0]);
 
-            // Find the correct keys for the columns, ignoring case and extra spaces
-            const orderIdKey = findColumnKey(reportData[0], "Order ID");
-            const settlementKey = findColumnKey(reportData[0], "Total Settlement Amount");
+            // FIXED: Use the exact column names provided by the user.
+            const orderIdKey = findColumnKey(reportData[0], "Order/adjustment ID");
+            const settlementKey = findColumnKey(reportData[0], "Total settlement amount");
 
             if (!orderIdKey || !settlementKey) {
-                throw new Error("Could not find 'Order ID' or 'Total Settlement Amount' columns in the spreadsheet.");
+                throw new Error("Could not find 'Order/adjustment ID' or 'Total settlement amount' columns in the spreadsheet.");
             }
 
             let totalWeeklyProfit = 0;
@@ -203,9 +202,9 @@ async function handleWeeklyAudit() {
  * @returns {string|null} The actual key or null if not found.
  */
 function findColumnKey(row, targetHeader) {
-    const target = targetHeader.toLowerCase().replace(/\s/g, '');
+    const target = targetHeader.toLowerCase().replace(/[^a-z0-9]/gi, '');
     for (const key in row) {
-        if (key.toLowerCase().replace(/\s/g, '') === target) {
+        if (key.toLowerCase().replace(/[^a-z0-9]/gi, '') === target) {
             return key;
         }
     }
