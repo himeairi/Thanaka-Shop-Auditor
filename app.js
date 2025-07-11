@@ -26,6 +26,7 @@ const firebaseConfig = {
 const processBtn = document.getElementById('process-btn');
 const copyBtn = document.getElementById('copy-btn');
 const saveOrdersBtn = document.getElementById('save-orders-btn');
+const exportBtn = document.getElementById('export-btn');
 const orderTextArea = document.getElementById('order-text');
 const resultsSection = document.getElementById('results-section');
 const resultsTableBody = document.getElementById('results-table-body');
@@ -140,16 +141,27 @@ async function handleWeeklyAudit() {
             if (reportData.length === 0) {
                 throw new Error("The uploaded spreadsheet is empty or could not be read.");
             }
+            
+            // For debugging: Log the first row to see the exact column names
+            console.log("First row of spreadsheet data:", reportData[0]);
+
+            // Find the correct keys for the columns, ignoring case and extra spaces
+            const orderIdKey = findColumnKey(reportData[0], "Order ID");
+            const settlementKey = findColumnKey(reportData[0], "Total Settlement Amount");
+
+            if (!orderIdKey || !settlementKey) {
+                throw new Error("Could not find 'Order ID' or 'Total Settlement Amount' columns in the spreadsheet.");
+            }
 
             let totalWeeklyProfit = 0;
             const weeklyResults = [];
 
             for (const row of reportData) {
-                const orderId = row["Order ID"];
-                const settlementAmount = parseFloat(row["Total Settlement Amount"]);
+                const orderId = row[orderIdKey];
+                const settlementAmount = parseFloat(row[settlementKey]);
 
                 if (!orderId || isNaN(settlementAmount)) {
-                    continue; // Skip rows without an order ID or valid settlement amount
+                    continue; 
                 }
 
                 const savedOrderDoc = await getDoc(doc(db, "users", auth.currentUser.uid, "processedOrders", String(orderId)));
@@ -183,6 +195,22 @@ async function handleWeeklyAudit() {
 // ===================================
 // == DATA HANDLING
 // ===================================
+
+/**
+ * Finds the actual key for a column in a data object, ignoring case and spaces.
+ * @param {Object} row - A sample row object from the data.
+ * @param {string} targetHeader - The desired header name (e.g., "Order ID").
+ * @returns {string|null} The actual key or null if not found.
+ */
+function findColumnKey(row, targetHeader) {
+    const target = targetHeader.toLowerCase().replace(/\s/g, '');
+    for (const key in row) {
+        if (key.toLowerCase().replace(/\s/g, '') === target) {
+            return key;
+        }
+    }
+    return null;
+}
 
 /**
  * Parses the product data from a CSV string into a usable format.
