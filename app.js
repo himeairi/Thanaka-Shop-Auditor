@@ -75,49 +75,52 @@ async function handleProcessOrders() {
     processedOrdersData = [];
     uiStartLoading();
     
-    const orderText = orderTextArea.value;
-    if (!orderText.trim()) {
-        alert("Please paste your order text.");
-        uiStopLoading();
-        return;
-    }
-
-    try {
-        const orders = parseOrders(orderText, masterProductData);
-
-        if (orders.length === 0) {
-            throw new Error("Could not parse any orders. Please check the text format and ensure product names in the pre-loaded data are correct.");
+    // Use setTimeout to ensure the UI updates (loading spinner shows) before heavy processing begins.
+    setTimeout(async () => {
+        const orderText = orderTextArea.value;
+        if (!orderText.trim()) {
+            alert("Please paste your order text.");
+            uiStopLoading();
+            return;
         }
 
-        let totalRevenue = 0, totalCost = 0;
-        
-        for (const order of orders) {
-            let currentOrderTotalCost = 0;
-            for (const item of order.items) {
-                const productInfo = findProductCost(item.productName, masterProductData);
-                if (productInfo) {
-                    currentOrderTotalCost += productInfo.cost * item.quantity;
-                    item.matchedProduct = productInfo.matchedProduct;
-                } else {
-                    item.matchedProduct = { Matching_Keywords: 'NOT FOUND', Product_Name: item.productName, Image_URL: '' };
-                }
+        try {
+            const orders = parseOrders(orderText, masterProductData);
+
+            if (orders.length === 0) {
+                throw new Error("Could not parse any orders. Please check the text format and ensure product names in the pre-loaded data are correct.");
             }
+
+            let totalRevenue = 0, totalCost = 0;
             
-            order.cost = currentOrderTotalCost;
-            
-            totalRevenue += order.salePrice;
-            totalCost += order.cost;
-            processedOrdersData.push(order);
+            for (const order of orders) {
+                let currentOrderTotalCost = 0;
+                for (const item of order.items) {
+                    const productInfo = findProductCost(item.productName, masterProductData);
+                    if (productInfo) {
+                        currentOrderTotalCost += productInfo.cost * item.quantity;
+                        item.matchedProduct = productInfo.matchedProduct;
+                    } else {
+                        item.matchedProduct = { Matching_Keywords: 'NOT FOUND', Product_Name: item.productName, Image_URL: '' };
+                    }
+                }
+                
+                order.cost = currentOrderTotalCost;
+                
+                totalRevenue += order.salePrice;
+                totalCost += order.cost;
+                processedOrdersData.push(order);
+            }
+
+            displayResults(processedOrdersData);
+
+        } catch (error) {
+            console.error("An error occurred during processing:", error);
+            alert(`Error: ${error.message}`);
+        } finally {
+            uiStopLoading();
         }
-
-        displayResults(processedOrdersData);
-
-    } catch (error) {
-        console.error("An error occurred during processing:", error);
-        alert(`Error: ${error.message}`);
-    } finally {
-        uiStopLoading();
-    }
+    }, 10); // A small delay is enough
 }
 
 /**
@@ -132,77 +135,80 @@ async function handleWeeklyAudit() {
 
     uiStartLoading();
 
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-        try {
-            const data = new Uint8Array(e.target.result);
-            const workbook = XLSX.read(data, { type: 'array' });
-            const sheetName = workbook.SheetNames[0];
-            const worksheet = workbook.Sheets[sheetName];
-            
-            const reportData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+    // Use setTimeout to ensure the UI updates (loading spinner shows) before file reading begins.
+    setTimeout(() => {
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            try {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const sheetName = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[sheetName];
+                
+                const reportData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
 
-            if (reportData.length < 2) {
-                throw new Error("The uploaded spreadsheet is empty or has no data rows.");
-            }
-            
-            const headers = reportData[0];
-            console.log("Spreadsheet Headers:", headers);
-
-            const orderIdIndex = headers.findIndex(h => h && h.trim() === "Order/adjustment ID");
-            const settlementIndex = headers.findIndex(h => h && h.trim() === "Total settlement amount");
-
-            if (orderIdIndex === -1) {
-                 throw new Error(`Could not find a column named exactly "Order/adjustment ID". Please check the spreadsheet.`);
-            }
-            if (settlementIndex === -1) {
-                 throw new Error(`Could not find a column named exactly "Total settlement amount". Please check the spreadsheet.`);
-            }
-
-            let totalWeeklyProfit = 0;
-            let totalWeeklyCost = 0;
-            weeklyResultsData = []; // Clear previous results
-            let foundMatches = 0;
-
-            const dataRows = reportData.slice(1);
-
-            for (const row of dataRows) {
-                const orderId = String(row[orderIdIndex]).trim();
-                const settlementAmount = parseFloat(row[settlementIndex]);
-
-                if (!orderId || isNaN(settlementAmount)) {
-                    continue; 
+                if (reportData.length < 2) {
+                    throw new Error("The uploaded spreadsheet is empty or has no data rows.");
                 }
                 
-                const savedOrderDoc = await getDoc(doc(db, "users", auth.currentUser.uid, "processedOrders", orderId));
+                const headers = reportData[0];
+                console.log("Spreadsheet Headers:", headers);
 
-                if (savedOrderDoc.exists()) {
-                    foundMatches++;
-                    const savedOrder = savedOrderDoc.data();
-                    const profit = settlementAmount - savedOrder.cost;
-                    totalWeeklyProfit += profit;
-                    totalWeeklyCost += savedOrder.cost;
-                    
-                    weeklyResultsData.push({
-                        orderId: savedOrder.orderId,
-                        products: savedOrder.items.map(item => `${item.productName} (x${item.quantity})`).join(', '),
-                        settlement: settlementAmount,
-                        cost: savedOrder.cost,
-                        profit: profit
-                    });
+                const orderIdIndex = headers.findIndex(h => h && h.trim() === "Order/adjustment ID");
+                const settlementIndex = headers.findIndex(h => h && h.trim() === "Total settlement amount");
+
+                if (orderIdIndex === -1) {
+                     throw new Error(`Could not find a column named exactly "Order/adjustment ID". Please check the spreadsheet.`);
                 }
+                if (settlementIndex === -1) {
+                     throw new Error(`Could not find a column named exactly "Total settlement amount". Please check the spreadsheet.`);
+                }
+
+                let totalWeeklyProfit = 0;
+                let totalWeeklyCost = 0;
+                weeklyResultsData = [];
+                let foundMatches = 0;
+
+                const dataRows = reportData.slice(1);
+
+                for (const row of dataRows) {
+                    const orderId = String(row[orderIdIndex]).trim();
+                    const settlementAmount = parseFloat(row[settlementIndex]);
+
+                    if (!orderId || isNaN(settlementAmount)) {
+                        continue; 
+                    }
+                    
+                    const savedOrderDoc = await getDoc(doc(db, "users", auth.currentUser.uid, "processedOrders", orderId));
+
+                    if (savedOrderDoc.exists()) {
+                        foundMatches++;
+                        const savedOrder = savedOrderDoc.data();
+                        const profit = settlementAmount - savedOrder.cost;
+                        totalWeeklyProfit += profit;
+                        totalWeeklyCost += savedOrder.cost;
+                        
+                        weeklyResultsData.push({
+                            orderId: savedOrder.orderId,
+                            products: savedOrder.items.map(item => `${item.productName} (x${item.quantity})`).join(', '),
+                            settlement: settlementAmount,
+                            cost: savedOrder.cost,
+                            profit: profit
+                        });
+                    }
+                }
+                
+                showNotification(`Found ${foundMatches} matching orders in the database.`);
+                displayWeeklyResults(weeklyResultsData, totalWeeklyProfit, totalWeeklyCost, foundMatches);
+            } catch (error) {
+                console.error("Error processing weekly report:", error);
+                alert(`Error: ${error.message}`);
+            } finally {
+                uiStopLoading();
             }
-            
-            showNotification(`Found ${foundMatches} matching orders in the database.`);
-            displayWeeklyResults(weeklyResultsData, totalWeeklyProfit, totalWeeklyCost, foundMatches);
-        } catch (error) {
-            console.error("Error processing weekly report:", error);
-            alert(`Error: ${error.message}`);
-        } finally {
-            uiStopLoading();
-        }
-    };
-    reader.readAsArrayBuffer(file);
+        };
+        reader.readAsArrayBuffer(file);
+    }, 10);
 }
 
 // ===================================
