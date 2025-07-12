@@ -608,21 +608,26 @@ function copyReportToClipboard() {
     const totalCost = processedOrdersData.reduce((sum, order) => sum + order.cost, 0);
 
     let htmlString = `
+        <style>
+            table { font-family: 'Prompt', sans-serif; font-size: 10pt; border-collapse: collapse; width: 100%; }
+            th, td { border: 1px solid #dddddd; text-align: left; padding: 5px; }
+            th { background-color: #f2f2f2; }
+        </style>
         <h1>Sales Audit Summary</h1>
         <p><strong>Total Revenue:</strong> ${formatCurrency(totalRevenue)}</p>
         <p><strong>Total Cost:</strong> ${formatCurrency(totalCost)}</p>
         <p><strong>Total Orders:</strong> ${processedOrdersData.length}</p>
         <br>
-        <table border="1" style="border-collapse: collapse; width: 100%;">
+        <table>
             <thead>
                 <tr>
-                    <th style="padding: 8px; text-align: left;">#</th>
-                    <th style="padding: 8px; text-align: left;">Image</th>
-                    <th style="padding: 8px; text-align: left;">Order ID</th>
-                    <th style="padding: 8px; text-align: left;">Product</th>
-                    <th style="padding: 8px; text-align: left;">Qty</th>
-                    <th style="padding: 8px; text-align: left;">Sale Price</th>
-                    <th style="padding: 8px; text-align: left;">Total Cost</th>
+                    <th>#</th>
+                    <th>Image</th>
+                    <th>Order ID</th>
+                    <th>Product</th>
+                    <th>Qty</th>
+                    <th>Sale Price</th>
+                    <th>Total Cost</th>
                 </tr>
             </thead>
             <tbody>
@@ -634,13 +639,13 @@ function copyReportToClipboard() {
         const imageUrl = order.items[0]?.matchedProduct.Image_URL || 'https://placehold.co/40x40/EEE/333?text=N/A';
         htmlString += `
             <tr>
-                <td style="padding: 8px;">${index + 1}</td>
-                <td style="padding: 8px;"><img src="${imageUrl}" width="40" height="40"></td>
-                <td style="padding: 8px;">${order.orderId}</td>
-                <td style="padding: 8px;">${productCellContent}</td>
-                <td style="padding: 8px;">${totalQuantity}</td>
-                <td style="padding: 8px;">${formatCurrency(order.salePrice)}</td>
-                <td style="padding: 8px;">${formatCurrency(order.cost)}</td>
+                <td>${index + 1}</td>
+                <td><img src="${imageUrl}" width="40" height="40"></td>
+                <td>${order.orderId}</td>
+                <td>${productCellContent}</td>
+                <td>${totalQuantity}</td>
+                <td>${formatCurrency(order.salePrice)}</td>
+                <td>${formatCurrency(order.cost)}</td>
             </tr>
         `;
     });
@@ -683,20 +688,25 @@ function copyWeeklyReportToClipboard() {
     const totalCost = weeklyResultsData.reduce((sum, result) => sum + result.cost, 0);
 
     let htmlString = `
+        <style>
+            table { font-family: 'Prompt', sans-serif; font-size: 10pt; border-collapse: collapse; width: 100%; }
+            th, td { border: 1px solid #dddddd; text-align: left; padding: 5px; }
+            th { background-color: #f2f2f2; }
+        </style>
         <h1>Weekly Profit Summary</h1>
         <p><strong>Total Weekly Profit:</strong> ${formatCurrency(totalProfit)}</p>
         <p><strong>Total Cost:</strong> ${formatCurrency(totalCost)}</p>
         <p><strong>Total Orders Found:</strong> ${weeklyResultsData.length}</p>
         <br>
-        <table border="1" style="border-collapse: collapse; width: 100%;">
+        <table>
             <thead>
                 <tr>
-                    <th style="padding: 8px; text-align: left;">#</th>
-                    <th style="padding: 8px; text-align: left;">Order ID</th>
-                    <th style="padding: 8px; text-align: left;">Product</th>
-                    <th style="padding: 8px; text-align: left;">Total Settlement</th>
-                    <th style="padding: 8px; text-align: left;">Cost</th>
-                    <th style="padding: 8px; text-align: left;">Profit</th>
+                    <th>#</th>
+                    <th>Order ID</th>
+                    <th>Product</th>
+                    <th>Total Settlement</th>
+                    <th>Cost</th>
+                    <th>Profit</th>
                 </tr>
             </thead>
             <tbody>
@@ -705,12 +715,12 @@ function copyWeeklyReportToClipboard() {
     weeklyResultsData.forEach((result, index) => {
         htmlString += `
             <tr>
-                <td style="padding: 8px;">${index + 1}</td>
-                <td style="padding: 8px;">${result.orderId}</td>
-                <td style="padding: 8px;">${result.products}</td>
-                <td style="padding: 8px;">${formatCurrency(result.settlement)}</td>
-                <td style="padding: 8px;">${formatCurrency(result.cost)}</td>
-                <td style="padding: 8px;">${formatCurrency(result.profit)}</td>
+                <td>${index + 1}</td>
+                <td>${result.orderId}</td>
+                <td>${result.products}</td>
+                <td>${formatCurrency(result.settlement)}</td>
+                <td>${formatCurrency(result.cost)}</td>
+                <td>${formatCurrency(result.profit)}</td>
             </tr>
         `;
     });
