@@ -430,7 +430,7 @@ async function saveOrdersToCloud() {
         return;
     }
 
-    uiStartLoading("Saving Orders...");
+    uiStartLoading('daily');
     const userId = auth.currentUser.uid;
     const batch = writeBatch(db);
 
@@ -473,7 +473,7 @@ function uiStartLoading(type) {
     container.classList.remove('hidden');
     
     setTimeout(() => {
-        bar.style.transitionDuration = '1.5s'; // Faster animation
+        bar.style.transitionDuration = '0.5s';
         bar.style.width = '90%';
     }, 10);
 
@@ -538,7 +538,7 @@ function displayResults(orders) {
     totalOrdersEl.textContent = orders.length;
 
     resultsTableBody.innerHTML = '';
-    orders.forEach(order => {
+    orders.forEach((order, index) => {
         const row = document.createElement('tr');
         row.className = 'hover:bg-gray-50';
 
@@ -547,6 +547,7 @@ function displayResults(orders) {
         const imageUrl = order.items[0]?.matchedProduct.Image_URL;
 
         row.innerHTML = `
+            <td class="px-4 py-3 text-sm text-gray-800">${index + 1}</td>
             <td class="px-4 py-3"><img src="${imageUrl || 'https://placehold.co/40x40/EEE/333?text=N/A'}" alt="Product Image" class="h-10 w-10 object-cover rounded"></td>
             <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-800">${order.orderId}</td>
             <td class="px-4 py-3 text-sm text-gray-600">${productCellContent}</td>
@@ -574,10 +575,11 @@ function displayWeeklyResults(results, totalProfit, totalCost, orderCount) {
     totalWeeklyOrdersEl.textContent = orderCount;
 
     weeklyResultsTableBody.innerHTML = '';
-    results.forEach(result => {
+    results.forEach((result, index) => {
         const row = document.createElement('tr');
         row.className = 'hover:bg-gray-50';
         row.innerHTML = `
+            <td class="px-4 py-3 text-sm text-gray-800">${index + 1}</td>
             <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-800">${result.orderId}</td>
             <td class="px-4 py-3 text-sm text-gray-600">${result.products}</td>
             <td class="px-4 py-3 text-sm text-gray-800">${formatCurrency(result.settlement)}</td>
@@ -614,6 +616,7 @@ function copyReportToClipboard() {
         <table border="1" style="border-collapse: collapse; width: 100%;">
             <thead>
                 <tr>
+                    <th style="padding: 8px; text-align: left;">#</th>
                     <th style="padding: 8px; text-align: left;">Image</th>
                     <th style="padding: 8px; text-align: left;">Order ID</th>
                     <th style="padding: 8px; text-align: left;">Product</th>
@@ -625,12 +628,13 @@ function copyReportToClipboard() {
             <tbody>
     `;
 
-    processedOrdersData.forEach(order => {
+    processedOrdersData.forEach((order, index) => {
         const productCellContent = order.items.map(item => `${item.matchedProduct.Product_Name} (x${item.quantity})`).join('<br>');
         const totalQuantity = order.items.reduce((sum, item) => sum + item.quantity, 0);
         const imageUrl = order.items[0]?.matchedProduct.Image_URL || 'https://placehold.co/40x40/EEE/333?text=N/A';
         htmlString += `
             <tr>
+                <td style="padding: 8px;">${index + 1}</td>
                 <td style="padding: 8px;"><img src="${imageUrl}" width="40" height="40"></td>
                 <td style="padding: 8px;">${order.orderId}</td>
                 <td style="padding: 8px;">${productCellContent}</td>
@@ -687,6 +691,7 @@ function copyWeeklyReportToClipboard() {
         <table border="1" style="border-collapse: collapse; width: 100%;">
             <thead>
                 <tr>
+                    <th style="padding: 8px; text-align: left;">#</th>
                     <th style="padding: 8px; text-align: left;">Order ID</th>
                     <th style="padding: 8px; text-align: left;">Product</th>
                     <th style="padding: 8px; text-align: left;">Total Settlement</th>
@@ -697,9 +702,10 @@ function copyWeeklyReportToClipboard() {
             <tbody>
     `;
 
-    weeklyResultsData.forEach(result => {
+    weeklyResultsData.forEach((result, index) => {
         htmlString += `
             <tr>
+                <td style="padding: 8px;">${index + 1}</td>
                 <td style="padding: 8px;">${result.orderId}</td>
                 <td style="padding: 8px;">${result.products}</td>
                 <td style="padding: 8px;">${formatCurrency(result.settlement)}</td>
