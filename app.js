@@ -457,7 +457,7 @@ async function saveOrdersToCloud() {
         const dataToSave = {
             orderId: order.orderId,
             cost: order.cost,
-            isAffiliate: order.isAffiliate, // Save the affiliate flag
+            isAffiliate: order.isAffiliate,
             items: order.items.map(item => ({
                 productName: item.matchedProduct.Product_Name,
                 quantity: item.quantity
@@ -474,7 +474,7 @@ async function saveOrdersToCloud() {
         console.error("Error saving orders to Firestore: ", error);
         showNotification("❌ Error saving orders to the cloud.", true);
     } finally {
-        uiStopLoading();
+        uiStopLoading('daily');
     }
 }
 
@@ -563,18 +563,32 @@ function displayResults(orders) {
 
         const productCellContent = order.items.map(item => `${item.matchedProduct.Product_Name} (x${item.quantity})`).join('<br>');
         const totalQuantity = order.items.reduce((sum, item) => sum + item.quantity, 0);
-        const imageUrl = order.items[0]?.matchedProduct.Image_URL;
+        
+        // FIXED: Create a container for images and loop through all items
+        const imageContainer = document.createElement('div');
+        imageContainer.className = 'flex flex-col space-y-1';
+        order.items.forEach(item => {
+            const imageUrl = item.matchedProduct.Image_URL || 'https://placehold.co/40x40/EEE/333?text=N/A';
+            const img = document.createElement('img');
+            img.src = imageUrl;
+            img.alt = "Product Image";
+            img.className = "h-10 w-10 object-cover rounded";
+            imageContainer.appendChild(img);
+        });
+        
         const affiliateStar = order.isAffiliate ? ' ⭐' : '';
 
         row.innerHTML = `
             <td class="px-4 py-3 text-sm text-gray-800">${index + 1}</td>
-            <td class="px-4 py-3"><img src="${imageUrl || 'https://placehold.co/40x40/EEE/333?text=N/A'}" alt="Product Image" class="h-10 w-10 object-cover rounded"></td>
+            <td class="px-4 py-3"></td>
             <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-800">${order.orderId}${affiliateStar}</td>
             <td class="px-4 py-3 text-sm text-gray-600">${productCellContent}</td>
             <td class="px-4 py-3 text-sm text-gray-800 text-center">${totalQuantity}</td>
             <td class="px-4 py-3 text-sm text-gray-800">${formatCurrency(order.salePrice)}</td>
             <td class="px-4 py-3 text-sm text-red-600">${formatCurrency(order.cost)}</td>
         `;
+        // Insert the image container into the correct cell
+        row.cells[1].appendChild(imageContainer);
         resultsTableBody.appendChild(row);
     });
 
@@ -630,7 +644,7 @@ function copyReportToClipboard() {
     let htmlString = `
         <style>
             table { font-family: 'Prompt', sans-serif; font-size: 10pt; border-collapse: collapse; width: 100%; }
-            th, td { border: 1px solid #dddddd; text-align: left; padding: 5px; }
+            th, td { border: 1px solid #dddddd; text-align: left; padding: 5px; vertical-align: top; }
             th { background-color: #f2f2f2; }
         </style>
         <h1>Sales Audit Summary</h1>
@@ -656,12 +670,16 @@ function copyReportToClipboard() {
     processedOrdersData.forEach((order, index) => {
         const productCellContent = order.items.map(item => `${item.matchedProduct.Product_Name} (x${item.quantity})`).join('<br>');
         const totalQuantity = order.items.reduce((sum, item) => sum + item.quantity, 0);
-        const imageUrl = order.items[0]?.matchedProduct.Image_URL || 'https://placehold.co/40x40/EEE/333?text=N/A';
+        // FIXED: Loop through all items to create image tags
+        const imageCellContent = order.items.map(item => {
+            const imageUrl = item.matchedProduct.Image_URL || 'https://placehold.co/40x40/EEE/333?text=N/A';
+            return `<img src="${imageUrl}" width="40" height="40">`;
+        }).join('<br>');
         const affiliateStar = order.isAffiliate ? ' ⭐' : '';
         htmlString += `
             <tr>
                 <td>${index + 1}</td>
-                <td><img src="${imageUrl}" width="40" height="40"></td>
+                <td>${imageCellContent}</td>
                 <td>${order.orderId}${affiliateStar}</td>
                 <td>${productCellContent}</td>
                 <td>${totalQuantity}</td>
