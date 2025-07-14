@@ -9,7 +9,7 @@ import { getFirestore, doc, getDoc, setDoc, writeBatch } from "https://www.gstat
 
 // ===================================
 // == FIREBASE CONFIG
-// ===================================
+// ===================================ฟ
 const firebaseConfig = {
   apiKey: "AIzaSyDMIl0gCaWjpcDHHBrM6HhYENi9edDDWKI",
   authDomain: "tiktok-audit-thanaka.firebaseapp.com",
@@ -275,12 +275,30 @@ function parseOrders(text, productData) {
             for (const product of finalProducts) {
                 const productNameIndex = block.indexOf(product.Matching_Keywords);
                 const searchArea = block.substring(productNameIndex);
-                const quantityMatch = searchArea.match(/×\s*(\d+)/);
                 
-                if (quantityMatch) {
+                let quantity = 0;
+
+                // FIXED: Handle the special case for soaps with "ก้อน" quantity format
+                const specialSoapSKUs = ['tan_soap', 'pom_soap'];
+                if (specialSoapSKUs.includes(product.SKU)) {
+                    const specialQtyMatch = searchArea.match(/(\d+)\s*ก้อน/);
+                    if (specialQtyMatch) {
+                        quantity = parseInt(specialQtyMatch[1], 10);
+                    }
+                }
+
+                // If quantity wasn't found with the special format, use the default '×' format
+                if (quantity === 0) {
+                    const quantityMatch = searchArea.match(/×\s*(\d+)/);
+                    if (quantityMatch) {
+                        quantity = parseInt(quantityMatch[1], 10);
+                    }
+                }
+                
+                if (quantity > 0) {
                     items.push({
                         productName: product.Matching_Keywords,
-                        quantity: parseInt(quantityMatch[1], 10)
+                        quantity: quantity
                     });
                 }
             }
