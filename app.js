@@ -9,7 +9,7 @@ import { getFirestore, doc, getDoc, setDoc, writeBatch } from "https://www.gstat
 
 // ===================================
 // == FIREBASE CONFIG
-// ===================================ฟ
+// ===================================
 const firebaseConfig = {
   apiKey: "AIzaSyDMIl0gCaWjpcDHHBrM6HhYENi9edDDWKI",
   authDomain: "tiktok-audit-thanaka.firebaseapp.com",
@@ -256,6 +256,7 @@ function parseOrders(text, productData) {
 
             const orderId = orderIdMatch[1].trim();
             const salePrice = parseFloat(salePriceMatch[1].replace(/,/g, ''));
+            const isAffiliate = block.includes('ครีเอเตอร์แอฟฟิลิเอต');
             const items = [];
 
             let foundProducts = [];
@@ -278,7 +279,6 @@ function parseOrders(text, productData) {
                 
                 let quantity = 0;
 
-                // FIXED: Handle the special case for soaps with "ก้อน" quantity format
                 const specialSoapSKUs = ['tan_soap', 'pom_soap'];
                 if (specialSoapSKUs.includes(product.SKU)) {
                     const specialQtyMatch = searchArea.match(/(\d+)\s*ก้อน/);
@@ -287,7 +287,6 @@ function parseOrders(text, productData) {
                     }
                 }
 
-                // If quantity wasn't found with the special format, use the default '×' format
                 if (quantity === 0) {
                     const quantityMatch = searchArea.match(/×\s*(\d+)/);
                     if (quantityMatch) {
@@ -307,7 +306,8 @@ function parseOrders(text, productData) {
                 parsedOrders.push({
                     orderId,
                     salePrice,
-                    items
+                    items,
+                    isAffiliate // Add the affiliate flag
                 });
             }
 
@@ -457,6 +457,7 @@ async function saveOrdersToCloud() {
         const dataToSave = {
             orderId: order.orderId,
             cost: order.cost,
+            isAffiliate: order.isAffiliate, // Save the affiliate flag
             items: order.items.map(item => ({
                 productName: item.matchedProduct.Product_Name,
                 quantity: item.quantity
@@ -563,11 +564,12 @@ function displayResults(orders) {
         const productCellContent = order.items.map(item => `${item.matchedProduct.Product_Name} (x${item.quantity})`).join('<br>');
         const totalQuantity = order.items.reduce((sum, item) => sum + item.quantity, 0);
         const imageUrl = order.items[0]?.matchedProduct.Image_URL;
+        const affiliateStar = order.isAffiliate ? ' ⭐' : '';
 
         row.innerHTML = `
             <td class="px-4 py-3 text-sm text-gray-800">${index + 1}</td>
             <td class="px-4 py-3"><img src="${imageUrl || 'https://placehold.co/40x40/EEE/333?text=N/A'}" alt="Product Image" class="h-10 w-10 object-cover rounded"></td>
-            <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-800">${order.orderId}</td>
+            <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-800">${order.orderId}${affiliateStar}</td>
             <td class="px-4 py-3 text-sm text-gray-600">${productCellContent}</td>
             <td class="px-4 py-3 text-sm text-gray-800 text-center">${totalQuantity}</td>
             <td class="px-4 py-3 text-sm text-gray-800">${formatCurrency(order.salePrice)}</td>
@@ -655,11 +657,12 @@ function copyReportToClipboard() {
         const productCellContent = order.items.map(item => `${item.matchedProduct.Product_Name} (x${item.quantity})`).join('<br>');
         const totalQuantity = order.items.reduce((sum, item) => sum + item.quantity, 0);
         const imageUrl = order.items[0]?.matchedProduct.Image_URL || 'https://placehold.co/40x40/EEE/333?text=N/A';
+        const affiliateStar = order.isAffiliate ? ' ⭐' : '';
         htmlString += `
             <tr>
                 <td>${index + 1}</td>
                 <td><img src="${imageUrl}" width="40" height="40"></td>
-                <td>${order.orderId}</td>
+                <td>${order.orderId}${affiliateStar}</td>
                 <td>${productCellContent}</td>
                 <td>${totalQuantity}</td>
                 <td>${formatCurrency(order.salePrice)}</td>
