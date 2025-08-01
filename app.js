@@ -25,6 +25,7 @@ const firebaseConfig = {
 // ===================================
 const processBtn = document.getElementById('process-btn');
 const copyBtn = document.getElementById('copy-btn');
+// The saveOrdersBtn is no longer needed but we keep the reference to avoid errors if the HTML isn't updated yet.
 const saveOrdersBtn = document.getElementById('save-orders-btn');
 const orderTextArea = document.getElementById('order-text');
 const resultsSection = document.getElementById('results-section');
@@ -72,7 +73,8 @@ let auth;
 // ===================================
 
 /**
- * Main controller to handle the order processing workflow.
+ * Main controller to handle the order processing and saving workflow.
+ * MODIFIED: This function now automatically saves the processed orders to Firestore.
  */
 async function handleProcessOrders() {
     processedOrdersData = [];
@@ -92,9 +94,8 @@ async function handleProcessOrders() {
             if (orders.length === 0) {
                 throw new Error("Could not parse any orders. Please check the text format and ensure product names in the pre-loaded data are correct.");
             }
-
-            let totalRevenue = 0, totalCost = 0;
             
+            // Process each order to calculate cost
             for (const order of orders) {
                 let currentOrderTotalCost = 0;
                 for (const item of order.items) {
@@ -106,19 +107,44 @@ async function handleProcessOrders() {
                         item.matchedProduct = { Matching_Keywords: 'NOT FOUND', Product_Name: item.productName, Image_URL: '' };
                     }
                 }
-                
                 order.cost = currentOrderTotalCost;
-                
-                totalRevenue += order.salePrice;
-                totalCost += order.cost;
                 processedOrdersData.push(order);
             }
 
+            // Display the results on the screen
             displayResults(processedOrdersData);
+
+            // --- NEW: AUTOMATICALLY SAVE TO CLOUD ---
+            if (auth.currentUser && processedOrdersData.length > 0) {
+                const userId = auth.currentUser.uid;
+                const batch = writeBatch(db);
+
+                processedOrdersData.forEach(order => {
+                    const docRef = doc(db, "users", userId, "processedOrders", order.orderId);
+                    const dataToSave = {
+                        orderId: order.orderId,
+                        cost: order.cost,
+                        isAffiliate: order.isAffiliate,
+                        items: order.items.map(item => ({
+                            productName: item.matchedProduct.Product_Name,
+                            quantity: item.quantity
+                        })),
+                        savedAt: new Date()
+                    };
+                    batch.set(docRef, dataToSave, { merge: true });
+                });
+
+                await batch.commit();
+                showNotification(`✅ Successfully processed and saved ${processedOrdersData.length} orders!`);
+            } else if (processedOrdersData.length > 0) {
+                 showNotification("Orders processed, but could not save to cloud (not connected).", true);
+            }
+            // --- END OF NEW LOGIC ---
 
         } catch (error) {
             console.error("An error occurred during processing:", error);
             alert(`Error: ${error.message}`);
+            showNotification(`❌ Error: ${error.message}`, true);
         } finally {
             uiStopLoading('daily');
         }
@@ -435,49 +461,6 @@ async function resetProductData() {
     }
 }
 
-/**
- * Saves the currently processed orders to a new 'processedOrders' collection in Firestore.
- */
-async function saveOrdersToCloud() {
-    if (!auth.currentUser) {
-        alert("Cannot save orders. Not connected to the database. Please refresh the page and try again.");
-        return;
-    }
-    if (processedOrdersData.length === 0) {
-        alert("No processed orders to save.");
-        return;
-    }
-
-    uiStartLoading('daily');
-    const userId = auth.currentUser.uid;
-    const batch = writeBatch(db);
-
-    processedOrdersData.forEach(order => {
-        const docRef = doc(db, "users", userId, "processedOrders", order.orderId);
-        const dataToSave = {
-            orderId: order.orderId,
-            cost: order.cost,
-            isAffiliate: order.isAffiliate,
-            items: order.items.map(item => ({
-                productName: item.matchedProduct.Product_Name,
-                quantity: item.quantity
-            })),
-            savedAt: new Date()
-        };
-        batch.set(docRef, dataToSave, { merge: true });
-    });
-
-    try {
-        await batch.commit();
-        showNotification(`✅ Successfully saved ${processedOrdersData.length} orders to the cloud.`);
-    } catch (error) {
-        console.error("Error saving orders to Firestore: ", error);
-        showNotification("❌ Error saving orders to the cloud.", true);
-    } finally {
-        uiStopLoading('daily');
-    }
-}
-
 
 // ===================================
 // == UI / VIEW FUNCTIONS
@@ -500,7 +483,7 @@ function uiStartLoading(type) {
     weeklyResultsSection.classList.add('hidden');
     processBtn.disabled = true;
     copyBtn.disabled = true;
-    saveOrdersBtn.disabled = true;
+    // REMOVED: saveOrdersBtn.disabled = true;
     calculateProfitBtn.disabled = true;
     resultsTableBody.innerHTML = '';
 }
@@ -519,7 +502,7 @@ function uiStopLoading() {
         calculateProfitBtn.disabled = false;
         if (processedOrdersData.length > 0) {
             copyBtn.disabled = false;
-            saveOrdersBtn.disabled = false;
+            // REMOVED: saveOrdersBtn.disabled = false;
         }
         if(weeklyResultsData.length > 0) {
             copyWeeklyBtn.disabled = false;
@@ -564,7 +547,6 @@ function displayResults(orders) {
         const productCellContent = order.items.map(item => `${item.matchedProduct.Product_Name} (x${item.quantity})`).join('<br>');
         const totalQuantity = order.items.reduce((sum, item) => sum + item.quantity, 0);
         
-        // FIXED: Create a container for images and loop through all items
         const imageContainer = document.createElement('div');
         imageContainer.className = 'flex flex-col space-y-1';
         order.items.forEach(item => {
@@ -587,7 +569,6 @@ function displayResults(orders) {
             <td class="px-4 py-3 text-sm text-gray-800">${formatCurrency(order.salePrice)}</td>
             <td class="px-4 py-3 text-sm text-red-600">${formatCurrency(order.cost)}</td>
         `;
-        // Insert the image container into the correct cell
         row.cells[1].appendChild(imageContainer);
         resultsTableBody.appendChild(row);
     });
@@ -670,7 +651,6 @@ function copyReportToClipboard() {
     processedOrdersData.forEach((order, index) => {
         const productCellContent = order.items.map(item => `${item.matchedProduct.Product_Name} (x${item.quantity})`).join('<br>');
         const totalQuantity = order.items.reduce((sum, item) => sum + item.quantity, 0);
-        // FIXED: Loop through all items to create image tags
         const imageCellContent = order.items.map(item => {
             const imageUrl = item.matchedProduct.Image_URL || 'https://placehold.co/40x40/EEE/333?text=N/A';
             return `<img src="${imageUrl}" width="40" height="40">`;
@@ -903,13 +883,14 @@ async function initialize() {
         renderProductTable(false);
     }
     
+    // MODIFIED: Removed the event listener for saveOrdersBtn
     processBtn.addEventListener('click', handleProcessOrders);
     copyBtn.addEventListener('click', copyReportToClipboard);
-    saveOrdersBtn.addEventListener('click', saveOrdersToCloud);
     calculateProfitBtn.addEventListener('click', handleWeeklyAudit);
     copyWeeklyBtn.addEventListener('click', copyWeeklyReportToClipboard);
+
+    // MODIFIED: The saveOrdersBtn is no longer used
     copyBtn.disabled = true;
-    saveOrdersBtn.disabled = true;
     copyWeeklyBtn.disabled = true;
 
     editDataBtn.addEventListener('click', uiStartEditMode);
