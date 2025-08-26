@@ -113,9 +113,7 @@
                             </table>
                         </div>
                         <div class="text-center mt-8 space-x-2">
-                            <button id="save-orders-btn" class="bg-purple-600 text-white font-bold py-3 px-6 rounded-md hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 disabled:bg-gray-400">
-                                Save Orders to Cloud
-                            </button>
+                            <!-- REMOVED the "Save Orders to Cloud" button -->
                             <button id="copy-btn" class="bg-blue-600 text-white font-bold py-3 px-6 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-400">
                                 Copy Report
                             </button>
@@ -212,6 +210,33 @@
     <!-- Notification Popup -->
     <div id="notification-popup" class="hidden fixed bottom-5 right-5 bg-green-500 text-white py-3 px-5 rounded-lg shadow-lg transition-opacity duration-500 opacity-0">
         <p>Notification</p>
+    </div>
+
+    <!-- NEW: Collapsed Order Alert Modal -->
+    <div id="collapsed-order-modal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50">
+        <div class="bg-white rounded-lg shadow-xl p-6 md:p-8 w-11/12 max-w-lg text-center">
+            <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-yellow-100 mb-4">
+                <svg class="h-6 w-6 text-yellow-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+            </div>
+            <h3 class="text-lg leading-6 font-medium text-gray-900" id="modal-title">
+                คำเตือน: พบคำสั่งซื้อที่พับอยู่
+            </h3>
+            <div class="mt-2">
+                <p class="text-sm text-gray-500">
+                    โปรดไปที่หน้า Seller Center และกด "แสดงสินค้าเพิ่มเติม" สำหรับคำสั่งซื้อต่อไปนี้ก่อนที่จะคัดลอกข้อความอีกครั้ง:
+                </p>
+                <ul id="collapsed-order-list" class="mt-4 text-left bg-gray-50 p-3 rounded-md list-disc list-inside">
+                    <!-- Order IDs will be injected here -->
+                </ul>
+            </div>
+            <div class="mt-5">
+                <button id="close-modal-btn" type="button" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-indigo-600 text-base font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:text-sm">
+                    เข้าใจแล้ว
+                </button>
+            </div>
+        </div>
     </div>
 
 </body>
