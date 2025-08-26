@@ -25,8 +25,6 @@ const firebaseConfig = {
 // ===================================
 const processBtn = document.getElementById('process-btn');
 const copyBtn = document.getElementById('copy-btn');
-// The saveOrdersBtn is no longer needed but we keep the reference to avoid errors if the HTML isn't updated yet.
-const saveOrdersBtn = document.getElementById('save-orders-btn');
 const orderTextArea = document.getElementById('order-text');
 const resultsSection = document.getElementById('results-section');
 const resultsTableBody = document.getElementById('results-table-body');
@@ -57,6 +55,9 @@ const totalWeeklyProfitEl = document.getElementById('total-weekly-profit');
 const totalWeeklyCostEl = document.getElementById('total-weekly-cost');
 const totalWeeklyOrdersEl = document.getElementById('total-weekly-orders');
 const copyWeeklyBtn = document.getElementById('copy-weekly-btn');
+const collapsedOrderModal = document.getElementById('collapsed-order-modal');
+const collapsedOrderList = document.getElementById('collapsed-order-list');
+const closeModalBtn = document.getElementById('close-modal-btn');
 
 
 // ===================================
@@ -73,13 +74,14 @@ let auth;
 // ===================================
 
 /**
- * Main controller to handle the order processing and saving workflow.
- * MODIFIED: This function now automatically saves the processed orders to Firestore.
+ * Main controller for the daily audit. It checks for collapsed orders,
+ * processes the text, calculates costs, displays results, and saves to the cloud.
  */
 async function handleProcessOrders() {
     processedOrdersData = [];
     uiStartLoading('daily');
     
+    // Use a short timeout to allow the UI to update before heavy processing
     setTimeout(async () => {
         const orderText = orderTextArea.value;
         if (!orderText.trim()) {
@@ -89,13 +91,33 @@ async function handleProcessOrders() {
         }
 
         try {
-            const orders = parseOrders(orderText, masterProductData);
+            // 1. Check for collapsed orders first
+            const orderBlocks = orderText.split(/รหัสคำสั่งซื้อ:/).slice(1);
+            const collapsedOrderIds = [];
+            const orderIdRegex = /^\s*(\d+)/;
 
+            for (const block of orderBlocks) {
+                if (block.includes('แสดงสินค้าเพิ่มเติม')) {
+                    const orderIdMatch = block.match(orderIdRegex);
+                    if (orderIdMatch) {
+                        collapsedOrderIds.push(orderIdMatch[1].trim());
+                    }
+                }
+            }
+
+            if (collapsedOrderIds.length > 0) {
+                displayCollapsedOrderWarning(collapsedOrderIds);
+                uiStopLoading('daily'); // Stop loading but don't show results
+                return; // Halt the entire process
+            }
+
+            // 2. Parse the orders from the text
+            const orders = parseOrders(orderText, masterProductData);
             if (orders.length === 0) {
-                throw new Error("Could not parse any orders. Please check the text format and ensure product names in the pre-loaded data are correct.");
+                throw new Error("Could not parse any orders. Please check the text format.");
             }
             
-            // Process each order to calculate cost
+            // 3. Calculate costs for each order
             for (const order of orders) {
                 let currentOrderTotalCost = 0;
                 for (const item of order.items) {
@@ -111,10 +133,10 @@ async function handleProcessOrders() {
                 processedOrdersData.push(order);
             }
 
-            // Display the results on the screen
+            // 4. Display results on the screen
             displayResults(processedOrdersData);
 
-            // --- NEW: AUTOMATICALLY SAVE TO CLOUD ---
+            // 5. Automatically save results to the cloud
             if (auth.currentUser && processedOrdersData.length > 0) {
                 const userId = auth.currentUser.uid;
                 const batch = writeBatch(db);
@@ -139,7 +161,6 @@ async function handleProcessOrders() {
             } else if (processedOrdersData.length > 0) {
                  showNotification("Orders processed, but could not save to cloud (not connected).", true);
             }
-            // --- END OF NEW LOGIC ---
 
         } catch (error) {
             console.error("An error occurred during processing:", error);
@@ -152,7 +173,7 @@ async function handleProcessOrders() {
 }
 
 /**
- * Handles the weekly profit calculation workflow.
+ * Handles the weekly profit calculation workflow by reading an .xlsx file.
  */
 async function handleWeeklyAudit() {
     const file = weeklyReportFile.files[0];
@@ -179,32 +200,21 @@ async function handleWeeklyAudit() {
                 }
                 
                 const headers = reportData[0];
-                console.log("Spreadsheet Headers:", headers);
-
                 const orderIdIndex = headers.findIndex(h => h && h.trim() === "Order/adjustment ID");
                 const settlementIndex = headers.findIndex(h => h && h.trim() === "Total settlement amount");
 
-                if (orderIdIndex === -1) {
-                     throw new Error(`Could not find a column named exactly "Order/adjustment ID". Please check the spreadsheet.`);
-                }
-                if (settlementIndex === -1) {
-                     throw new Error(`Could not find a column named exactly "Total settlement amount". Please check the spreadsheet.`);
-                }
+                if (orderIdIndex === -1) throw new Error(`Could not find a column named "Order/adjustment ID".`);
+                if (settlementIndex === -1) throw new Error(`Could not find a column named "Total settlement amount".`);
 
-                let totalWeeklyProfit = 0;
-                let totalWeeklyCost = 0;
+                let totalWeeklyProfit = 0, totalWeeklyCost = 0, foundMatches = 0;
                 weeklyResultsData = [];
-                let foundMatches = 0;
-
                 const dataRows = reportData.slice(1);
 
                 for (const row of dataRows) {
                     const orderId = String(row[orderIdIndex]).trim();
                     const settlementAmount = parseFloat(row[settlementIndex]);
 
-                    if (!orderId || isNaN(settlementAmount)) {
-                        continue; 
-                    }
+                    if (!orderId || isNaN(settlementAmount)) continue;
                     
                     const savedOrderDoc = await getDoc(doc(db, "users", auth.currentUser.uid, "processedOrders", orderId));
 
@@ -244,14 +254,13 @@ async function handleWeeklyAudit() {
 
 /**
  * Parses the product data from a CSV string into a usable format.
- * @param {string} csvString - The CSV data as a string.
- * @returns {{products: Array<Object>, skuMap: Map<string, Object>}}
  */
 function parseProductSheet(csvString) {
     const workbook = XLSX.read(csvString.trim(), { type: 'string' });
     const sheetName = workbook.SheetNames[0];
     const sheet = workbook.Sheets[sheetName];
     const products = XLSX.utils.sheet_to_json(sheet);
+    // Sort by keyword length to match longer, more specific names first
     products.sort((a, b) => (b.Matching_Keywords || '').length - (a.Matching_Keywords || '').length);
     const skuMap = new Map(products.map(p => [p.SKU, p]));
     return { products, skuMap };
@@ -259,9 +268,6 @@ function parseProductSheet(csvString) {
 
 /**
  * Parses orders by searching for known product names within each block of text.
- * @param {string} text - The raw text from the textarea.
- * @param {Object} productData - The pre-loaded product data.
- * @returns {Array<Object>} An array of structured order objects, where each object can contain multiple items.
  */
 function parseOrders(text, productData) {
     const parsedOrders = [];
@@ -271,7 +277,6 @@ function parseOrders(text, productData) {
         try {
             const orderIdRegex = /^\s*(\d+)/;
             const salePriceRegex = /฿\s*([\d,]+\.?\d*)/;
-
             const orderIdMatch = block.match(orderIdRegex);
             const salePriceMatch = block.match(salePriceRegex);
 
@@ -284,57 +289,47 @@ function parseOrders(text, productData) {
             const salePrice = parseFloat(salePriceMatch[1].replace(/,/g, ''));
             const isAffiliate = block.includes('ครีเอเตอร์แอฟฟิลิเอต');
             const items = [];
-
             let foundProducts = [];
+
             for (const product of productData.products) {
                 if (block.includes(product.Matching_Keywords)) {
                     foundProducts.push(product);
                 }
             }
 
-            const finalProducts = foundProducts.filter(productA => {
-                return !foundProducts.some(productB => 
+            // Filter out sub-matches (e.g., if both "ครีมซอง" and "ครีมซอง 6 ซอง" match, keep only the longer one)
+            const finalProducts = foundProducts.filter(productA => 
+                !foundProducts.some(productB => 
                     productA.Matching_Keywords !== productB.Matching_Keywords && 
                     productB.Matching_Keywords.includes(productA.Matching_Keywords)
-                );
-            });
+                )
+            );
             
             for (const product of finalProducts) {
                 const productNameIndex = block.indexOf(product.Matching_Keywords);
                 const searchArea = block.substring(productNameIndex);
-                
                 let quantity = 0;
-
                 const specialSoapSKUs = ['tan_soap', 'pom_soap'];
+
+                // Handle special quantity format for specific soaps ("3 ก้อน")
                 if (specialSoapSKUs.includes(product.SKU)) {
                     const specialQtyMatch = searchArea.match(/(\d+)\s*ก้อน/);
-                    if (specialQtyMatch) {
-                        quantity = parseInt(specialQtyMatch[1], 10);
-                    }
+                    if (specialQtyMatch) quantity = parseInt(specialQtyMatch[1], 10);
                 }
 
+                // Handle standard quantity format ("x 3")
                 if (quantity === 0) {
                     const quantityMatch = searchArea.match(/×\s*(\d+)/);
-                    if (quantityMatch) {
-                        quantity = parseInt(quantityMatch[1], 10);
-                    }
+                    if (quantityMatch) quantity = parseInt(quantityMatch[1], 10);
                 }
                 
                 if (quantity > 0) {
-                    items.push({
-                        productName: product.Matching_Keywords,
-                        quantity: quantity
-                    });
+                    items.push({ productName: product.Matching_Keywords, quantity });
                 }
             }
 
             if (items.length > 0) {
-                parsedOrders.push({
-                    orderId,
-                    salePrice,
-                    items,
-                    isAffiliate // Add the affiliate flag
-                });
+                parsedOrders.push({ orderId, salePrice, items, isAffiliate });
             }
 
         } catch (e) {
@@ -344,16 +339,11 @@ function parseOrders(text, productData) {
     return parsedOrders;
 }
 
-
 /**
- * Finds the correct product and calculates its cost.
- * @param {string} orderProductName - The product name from the parsed order.
- * @param {{products: Array<Object>, skuMap: Map<string, Object>}} productData
- * @returns {Object|null}
+ * Finds the correct product and calculates its cost, handling bundles.
  */
 function findProductCost(orderProductName, { products, skuMap }) {
     const bestMatch = products.find(p => p.Matching_Keywords === orderProductName);
-
     if (bestMatch) {
         let totalCost = 0;
         if (bestMatch.Bundle_Components) {
@@ -407,26 +397,21 @@ async function loadDataFromFirestore() {
  */
 async function updateAndSaveFromDOM() {
     if (!auth.currentUser) {
-        alert("Cannot save. Not connected to the database. Please refresh the page and try again.");
+        alert("Cannot save. Not connected to the database.");
         return;
     }
-
     const tableRows = productDataTableContainer.querySelectorAll('tbody tr');
     const updatedProducts = [];
     tableRows.forEach(row => {
         const sku = row.dataset.sku;
         const productToUpdate = { SKU: sku };
         row.querySelectorAll('input[data-key]').forEach(input => {
-            const key = input.dataset.key;
-            productToUpdate[key] = input.value;
+            productToUpdate[input.dataset.key] = input.value;
         });
         updatedProducts.push(productToUpdate);
     });
-
     masterProductData.products = updatedProducts;
-    
     await saveMasterDataToFirestore();
-
     renderProductTable(false);
     uiEndEditMode();
 }
@@ -451,7 +436,7 @@ async function saveMasterDataToFirestore() {
  */
 async function resetProductData() {
     if (!auth.currentUser) {
-        alert("Cannot reset. Not connected to the database. Please refresh the page and try again.");
+        alert("Cannot reset. Not connected to the database.");
         return;
     }
     if (confirm("Are you sure you want to reset your data to the default? This will overwrite your cloud data.")) {
@@ -461,55 +446,66 @@ async function resetProductData() {
     }
 }
 
-
 // ===================================
 // == UI / VIEW FUNCTIONS
 // ===================================
 
+/**
+ * Displays a warning modal with the IDs of collapsed orders.
+ */
+function displayCollapsedOrderWarning(orderIds) {
+    collapsedOrderList.innerHTML = ''; // Clear previous list
+    orderIds.forEach(id => {
+        const li = document.createElement('li');
+        li.textContent = `Order ID: ${id}`;
+        collapsedOrderList.appendChild(li);
+    });
+    collapsedOrderModal.classList.remove('hidden');
+}
+
+/**
+ * Shows loading indicators and disables buttons.
+ */
 function uiStartLoading(type) {
     const bar = type === 'weekly' ? weeklyProgressBar : dailyProgressBar;
     const container = type === 'weekly' ? weeklyLoadingDiv : dailyLoadingDiv;
-
     bar.style.transitionDuration = '0s';
     bar.style.width = '0%';
     container.classList.remove('hidden');
-    
     setTimeout(() => {
         bar.style.transitionDuration = '0.5s';
         bar.style.width = '90%';
     }, 10);
-
     resultsSection.classList.add('hidden');
     weeklyResultsSection.classList.add('hidden');
     processBtn.disabled = true;
     copyBtn.disabled = true;
-    // REMOVED: saveOrdersBtn.disabled = true;
     calculateProfitBtn.disabled = true;
     resultsTableBody.innerHTML = '';
 }
 
+/**
+ * Hides loading indicators and re-enables buttons.
+ */
 function uiStopLoading() {
     const bars = [dailyProgressBar, weeklyProgressBar];
     bars.forEach(bar => {
         bar.style.transitionDuration = '0.3s';
         bar.style.width = '100%';
     });
-    
     setTimeout(() => {
         dailyLoadingDiv.classList.add('hidden');
         weeklyLoadingDiv.classList.add('hidden');
         processBtn.disabled = false;
         calculateProfitBtn.disabled = false;
-        if (processedOrdersData.length > 0) {
-            copyBtn.disabled = false;
-            // REMOVED: saveOrdersBtn.disabled = false;
-        }
-        if(weeklyResultsData.length > 0) {
-            copyWeeklyBtn.disabled = false;
-        }
+        if (processedOrdersData.length > 0) copyBtn.disabled = false;
+        if (weeklyResultsData.length > 0) copyWeeklyBtn.disabled = false;
     }, 500);
 }
 
+/**
+ * Switches the product data table to edit mode.
+ */
 function uiStartEditMode() {
     renderProductTable(true);
     editDataBtn.classList.add('hidden');
@@ -518,6 +514,9 @@ function uiStartEditMode() {
     resetDataBtn.classList.add('hidden');
 }
 
+/**
+ * Switches the product data table to view mode.
+ */
 function uiEndEditMode() {
     renderProductTable(false);
     editDataBtn.classList.remove('hidden');
@@ -527,26 +526,21 @@ function uiEndEditMode() {
 }
 
 /**
- * Renders the results into the summary cards and the main table.
- * @param {Array<Object>} orders
+ * Renders the daily audit results into the summary cards and the main table.
  */
 function displayResults(orders) {
     const totalRevenue = orders.reduce((sum, order) => sum + order.salePrice, 0);
     const totalCost = orders.reduce((sum, order) => sum + order.cost, 0);
     const formatCurrency = (num) => `฿${num.toFixed(2)}`;
-
     totalRevenueEl.textContent = formatCurrency(totalRevenue);
     totalCostEl.textContent = formatCurrency(totalCost);
     totalOrdersEl.textContent = orders.length;
-
     resultsTableBody.innerHTML = '';
     orders.forEach((order, index) => {
         const row = document.createElement('tr');
         row.className = 'hover:bg-gray-50';
-
         const productCellContent = order.items.map(item => `${item.matchedProduct.Product_Name} (x${item.quantity})`).join('<br>');
         const totalQuantity = order.items.reduce((sum, item) => sum + item.quantity, 0);
-        
         const imageContainer = document.createElement('div');
         imageContainer.className = 'flex flex-col space-y-1';
         order.items.forEach(item => {
@@ -557,9 +551,7 @@ function displayResults(orders) {
             img.className = "h-10 w-10 object-cover rounded";
             imageContainer.appendChild(img);
         });
-        
         const affiliateStar = order.isAffiliate ? ' ⭐' : '';
-
         row.innerHTML = `
             <td class="px-4 py-3 text-sm text-gray-800">${index + 1}</td>
             <td class="px-4 py-3"></td>
@@ -572,23 +564,17 @@ function displayResults(orders) {
         row.cells[1].appendChild(imageContainer);
         resultsTableBody.appendChild(row);
     });
-
     resultsSection.classList.remove('hidden');
 }
 
 /**
  * Renders the weekly profit results into its dedicated table.
- * @param {Array<Object>} results
- * @param {number} totalProfit
- * @param {number} totalCost
- * @param {number} orderCount
  */
 function displayWeeklyResults(results, totalProfit, totalCost, orderCount) {
     const formatCurrency = (num) => `฿${num.toFixed(2)}`;
     totalWeeklyProfitEl.textContent = formatCurrency(totalProfit);
     totalWeeklyCostEl.textContent = formatCurrency(totalCost);
     totalWeeklyOrdersEl.textContent = orderCount;
-
     weeklyResultsTableBody.innerHTML = '';
     results.forEach((result, index) => {
         const row = document.createElement('tr');
@@ -603,11 +589,9 @@ function displayWeeklyResults(results, totalProfit, totalCost, orderCount) {
         `;
         weeklyResultsTableBody.appendChild(row);
     });
-
     weeklyResultsSection.classList.remove('hidden');
     copyWeeklyBtn.disabled = false;
 }
-
 
 /**
  * Generates a clean HTML version of the daily report and copies it to the clipboard.
@@ -617,11 +601,9 @@ function copyReportToClipboard() {
         alert("No data to copy. Please process orders first.");
         return;
     }
-
     const formatCurrency = (num) => `฿${num.toFixed(2)}`;
     const totalRevenue = processedOrdersData.reduce((sum, order) => sum + order.salePrice, 0);
     const totalCost = processedOrdersData.reduce((sum, order) => sum + order.cost, 0);
-
     let htmlString = `
         <style>
             table { font-family: 'Prompt', sans-serif; font-size: 10pt; border-collapse: collapse; width: 100%; }
@@ -636,25 +618,15 @@ function copyReportToClipboard() {
         <table>
             <thead>
                 <tr>
-                    <th>#</th>
-                    <th>Image</th>
-                    <th>Order ID</th>
-                    <th>Product</th>
-                    <th>Qty</th>
-                    <th>Sale Price</th>
-                    <th>Total Cost</th>
+                    <th>#</th><th>Image</th><th>Order ID</th><th>Product</th><th>Qty</th><th>Sale Price</th><th>Total Cost</th>
                 </tr>
             </thead>
-            <tbody>
-    `;
+            <tbody>`;
 
     processedOrdersData.forEach((order, index) => {
         const productCellContent = order.items.map(item => `${item.matchedProduct.Product_Name} (x${item.quantity})`).join('<br>');
         const totalQuantity = order.items.reduce((sum, item) => sum + item.quantity, 0);
-        const imageCellContent = order.items.map(item => {
-            const imageUrl = item.matchedProduct.Image_URL || 'https://placehold.co/40x40/EEE/333?text=N/A';
-            return `<img src="${imageUrl}" width="40" height="40">`;
-        }).join('<br>');
+        const imageCellContent = order.items.map(item => `<img src="${item.matchedProduct.Image_URL || 'https://placehold.co/40x40/EEE/333?text=N/A'}" width="40" height="40">`).join('<br>');
         const affiliateStar = order.isAffiliate ? ' ⭐' : '';
         htmlString += `
             <tr>
@@ -665,23 +637,20 @@ function copyReportToClipboard() {
                 <td>${totalQuantity}</td>
                 <td>${formatCurrency(order.salePrice)}</td>
                 <td>${formatCurrency(order.cost)}</td>
-            </tr>
-        `;
+            </tr>`;
     });
-
     htmlString += `</tbody></table>`;
-
+    
+    // Use a temporary element to copy the rich text
     const tempEl = document.createElement('div');
     tempEl.style.position = 'absolute';
     tempEl.style.left = '-9999px';
     tempEl.innerHTML = htmlString;
     document.body.appendChild(tempEl);
-    
     const range = document.createRange();
     range.selectNode(tempEl);
     window.getSelection().removeAllRanges();
     window.getSelection().addRange(range);
-    
     try {
         document.execCommand('copy');
         showNotification('✅ Report copied to clipboard!');
@@ -689,7 +658,6 @@ function copyReportToClipboard() {
         console.error('Failed to copy text: ', err);
         showNotification('❌ Failed to copy report.', true);
     }
-
     document.body.removeChild(tempEl);
 }
 
@@ -698,14 +666,12 @@ function copyReportToClipboard() {
  */
 function copyWeeklyReportToClipboard() {
     if (weeklyResultsData.length === 0) {
-        alert("No weekly data to copy. Please calculate the weekly profit first.");
+        alert("No weekly data to copy.");
         return;
     }
-
     const formatCurrency = (num) => `฿${num.toFixed(2)}`;
     const totalProfit = weeklyResultsData.reduce((sum, result) => sum + result.profit, 0);
     const totalCost = weeklyResultsData.reduce((sum, result) => sum + result.cost, 0);
-
     let htmlString = `
         <style>
             table { font-family: 'Prompt', sans-serif; font-size: 10pt; border-collapse: collapse; width: 100%; }
@@ -720,16 +686,10 @@ function copyWeeklyReportToClipboard() {
         <table>
             <thead>
                 <tr>
-                    <th>#</th>
-                    <th>Order ID</th>
-                    <th>Product</th>
-                    <th>Total Settlement</th>
-                    <th>Cost</th>
-                    <th>Profit</th>
+                    <th>#</th><th>Order ID</th><th>Product</th><th>Total Settlement</th><th>Cost</th><th>Profit</th>
                 </tr>
             </thead>
-            <tbody>
-    `;
+            <tbody>`;
 
     weeklyResultsData.forEach((result, index) => {
         htmlString += `
@@ -740,10 +700,8 @@ function copyWeeklyReportToClipboard() {
                 <td>${formatCurrency(result.settlement)}</td>
                 <td>${formatCurrency(result.cost)}</td>
                 <td>${formatCurrency(result.profit)}</td>
-            </tr>
-        `;
+            </tr>`;
     });
-
     htmlString += `</tbody></table>`;
 
     const tempEl = document.createElement('div');
@@ -751,12 +709,10 @@ function copyWeeklyReportToClipboard() {
     tempEl.style.left = '-9999px';
     tempEl.innerHTML = htmlString;
     document.body.appendChild(tempEl);
-    
     const range = document.createRange();
     range.selectNode(tempEl);
     window.getSelection().removeAllRanges();
     window.getSelection().addRange(range);
-    
     try {
         document.execCommand('copy');
         showNotification('✅ Weekly report copied to clipboard!');
@@ -764,13 +720,11 @@ function copyWeeklyReportToClipboard() {
         console.error('Failed to copy text: ', err);
         showNotification('❌ Failed to copy report.', true);
     }
-
     document.body.removeChild(tempEl);
 }
 
 /**
- * Renders the product data table.
- * @param {boolean} isEditable - If true, renders inputs; otherwise, text.
+ * Renders the product data table, either as static text or as editable inputs.
  */
 function renderProductTable(isEditable = false) {
     const table = document.createElement('table');
@@ -821,14 +775,11 @@ function renderProductTable(isEditable = false) {
 }
 
 /**
- * Shows a temporary popup to notify the user.
- * @param {string} message - The message to display.
- * @param {boolean} isError - If true, shows a red error popup.
+ * Shows a temporary popup notification to the user.
  */
 function showNotification(message, isError = false) {
     notificationPopup.textContent = message;
     notificationPopup.className = `fixed bottom-5 right-5 text-white py-3 px-5 rounded-lg shadow-lg transition-opacity duration-500 opacity-0 ${isError ? 'bg-red-500' : 'bg-green-500'}`;
-    
     notificationPopup.classList.remove('hidden');
     setTimeout(() => notificationPopup.classList.remove('opacity-0'), 10);
     setTimeout(() => {
@@ -837,6 +788,9 @@ function showNotification(message, isError = false) {
     }, 3000);
 }
 
+/**
+ * Handles switching between the main application tabs.
+ */
 function switchTab(activeTabId) {
     const tabs = [
         { id: 'daily', tabEl: dailyAuditTab, panelEl: dailyAuditPanel },
@@ -861,14 +815,17 @@ function switchTab(activeTabId) {
 // == INITIALIZATION
 // ===================================
 
+/**
+ * Initializes the application, sets up Firebase, and attaches event listeners.
+ */
 async function initialize() {
     orderTextArea.value = sampleOrders;
     
+    // Set up Firebase connection
     try {
         const app = initializeApp(firebaseConfig);
         auth = getAuth(app);
         db = getFirestore(app);
-
         await signInAnonymously(auth);
         onAuthStateChanged(auth, async user => {
             if (user) {
@@ -883,28 +840,33 @@ async function initialize() {
         renderProductTable(false);
     }
     
-    // MODIFIED: Removed the event listener for saveOrdersBtn
+    // Attach main event listeners
     processBtn.addEventListener('click', handleProcessOrders);
     copyBtn.addEventListener('click', copyReportToClipboard);
     calculateProfitBtn.addEventListener('click', handleWeeklyAudit);
     copyWeeklyBtn.addEventListener('click', copyWeeklyReportToClipboard);
-
-    // MODIFIED: The saveOrdersBtn is no longer used
     copyBtn.disabled = true;
     copyWeeklyBtn.disabled = true;
 
+    // Attach listeners for the product data editor
     editDataBtn.addEventListener('click', uiStartEditMode);
     saveDataBtn.addEventListener('click', updateAndSaveFromDOM);
     cancelDataBtn.addEventListener('click', uiEndEditMode);
     resetDataBtn.addEventListener('click', resetProductData);
 
-    // Tab listeners
+    // Attach listener for the new modal
+    closeModalBtn.addEventListener('click', () => {
+        collapsedOrderModal.classList.add('hidden');
+    });
+
+    // Attach listeners for tab navigation
     dailyAuditTab.addEventListener('click', () => switchTab('daily'));
     weeklyAuditTab.addEventListener('click', () => switchTab('weekly'));
     productDataTab.addEventListener('click', () => switchTab('data'));
 
-    // Set initial tab state
+    // Set the initial active tab
     switchTab('daily');
 }
 
+// Start the application
 initialize();
