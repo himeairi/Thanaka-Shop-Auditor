@@ -5,7 +5,8 @@ import { productCSVData, sampleOrders } from './data.js';
 // ===================================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.6.10/firebase-app.js";
 import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9.6.10/firebase-auth.js";
-import { getFirestore, doc, getDoc, setDoc, writeBatch } from "https://www.gstatic.com/firebasejs/9.6.10/firebase-firestore.js";
+import { getFirestore, doc, getDoc, setDoc, writeBatch, serverTimestamp } from "https://www.gstatic.com/firebasejs/9.6.10/firebase-firestore.js";
+
 
 // ===================================
 // == FIREBASE CONFIG
@@ -151,7 +152,7 @@ async function handleProcessOrders() {
                             productName: item.matchedProduct.Product_Name,
                             quantity: item.quantity
                         })),
-                        savedAt: new Date()
+                        savedAt: serverTimestamp()
                     };
                     batch.set(docRef, dataToSave, { merge: true });
                 });
@@ -230,7 +231,11 @@ async function handleWeeklyAudit() {
                             products: savedOrder.items.map(item => `${item.productName} (x${item.quantity})`).join(', '),
                             settlement: settlementAmount,
                             cost: savedOrder.cost,
-                            profit: profit
+                            profit: profit,
+                            uploadedAt: savedOrder.savedAt && typeof savedOrder.savedAt.toDate === 'function'
+                                ? savedOrder.savedAt.toDate()
+                                : (savedOrder.savedAt ? new Date(savedOrder.savedAt) : null)
+                          
                         });
                     }
                 }
@@ -686,16 +691,20 @@ function copyWeeklyReportToClipboard() {
         <table>
             <thead>
                 <tr>
-                    <th>#</th><th>Order ID</th><th>Product</th><th>Total Settlement</th><th>Cost</th><th>Profit</th>
+                    <th>#</th><th>Order ID</th><th>Uploaded At</th><th>Product</th><th>Total Settlement</th><th>Cost</th><th>Profit</th>
                 </tr>
             </thead>
             <tbody>`;
 
     weeklyResultsData.forEach((result, index) => {
+      const uploadedDisplay = result.uploadedAt
+            ? new Date(result.uploadedAt).toLocaleString()
+            : '';
         htmlString += `
             <tr>
                 <td>${index + 1}</td>
                 <td>${result.orderId}</td>
+                <td>${uploadedDisplay}</td>
                 <td>${result.products}</td>
                 <td>${formatCurrency(result.settlement)}</td>
                 <td>${formatCurrency(result.cost)}</td>
@@ -870,3 +879,4 @@ async function initialize() {
 
 // Start the application
 initialize();
+
