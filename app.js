@@ -580,6 +580,9 @@ function displayWeeklyResults(results, totalProfit, totalCost, orderCount) {
     totalWeeklyOrdersEl.textContent = orderCount;
     weeklyResultsTableBody.innerHTML = '';
     results.forEach((result, index) => {
+        const uploadedDisplay = result.uploadedAt
+            ? new Date(result.uploadedAt).toLocaleString()
+            : '';
         const row = document.createElement('tr');
         row.className = 'hover:bg-gray-50';
         row.innerHTML = `
@@ -589,6 +592,7 @@ function displayWeeklyResults(results, totalProfit, totalCost, orderCount) {
             <td class="px-4 py-3 text-sm text-gray-800">${formatCurrency(result.settlement)}</td>
             <td class="px-4 py-3 text-sm text-red-600">${formatCurrency(result.cost)}</td>
             <td class="px-4 py-3 text-sm font-bold ${result.profit >= 0 ? 'text-green-600' : 'text-red-700'}">${formatCurrency(result.profit)}</td>
+            <td class="px-4 py-3 text-sm text-gray-600">${uploadedDisplay}</td>
         `;
         weeklyResultsTableBody.appendChild(row);
     });
