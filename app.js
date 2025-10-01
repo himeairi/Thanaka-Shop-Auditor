@@ -5,7 +5,7 @@ import { productCSVData, sampleOrders } from './data.js';
 // ===================================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.6.10/firebase-app.js";
 import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9.6.10/firebase-auth.js";
-import { getFirestore, doc, getDoc, setDoc, writeBatch, serverTimestamp } from "https://www.gstatic.com/firebasejs/9.6.10/firebase-firestore.js";
+import { getFirestore, doc, getDoc, setDoc, writeBatch, serverTimestamp, collectionGroup, query, where, getDocs } from "https://www.gstatic.com/firebasejs/9.6.10/firebase-firestore.js";
 
 
 // ===================================
@@ -216,16 +216,26 @@ async function handleWeeklyAudit() {
                     const settlementAmount = parseFloat(row[settlementIndex]);
 
                     if (!orderId || isNaN(settlementAmount)) continue;
-                    
-                    const savedOrderDoc = await getDoc(doc(db, "users", auth.currentUser.uid, "processedOrders", orderId));
 
-                    if (savedOrderDoc.exists()) {
+                    const q = query(collectionGroup(db, "processedOrders"), where("orderId", "==", orderId));
+                    const cgSnap = await getDocs(q);
+
+                    if (!cgSnap.empty) {
                         foundMatches++;
-                        const savedOrder = savedOrderDoc.data();
+                        let chosenDoc = cgSnap.docs[0];
+                        chosenDoc = cgSnap.docs.reduce((best, d) => {
+                            const a = d.data().savedAt;
+                            const at = a && typeof a.toDate === 'function' ? a.toDate().getTime() : 0;
+                            const bData = best.data();
+                            const bt = bData.savedAt && typeof bData.savedAt.toDate === 'function' ? bData.savedAt.toDate().getTime() : 0;
+                            return at > bt ? d : best;
+                        }, chosenDoc);
+
+                        const savedOrder = chosenDoc.data();
                         const profit = settlementAmount - savedOrder.cost;
                         totalWeeklyProfit += profit;
                         totalWeeklyCost += savedOrder.cost;
-                        
+
                         weeklyResultsData.push({
                             orderId: savedOrder.orderId,
                             products: savedOrder.items.map(item => `${item.productName} (x${item.quantity})`).join(', '),
@@ -235,7 +245,6 @@ async function handleWeeklyAudit() {
                             uploadedAt: savedOrder.savedAt && typeof savedOrder.savedAt.toDate === 'function'
                                 ? savedOrder.savedAt.toDate()
                                 : (savedOrder.savedAt ? new Date(savedOrder.savedAt) : null)
-                          
                         });
                     }
                 }
