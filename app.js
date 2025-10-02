@@ -290,17 +290,18 @@ function parseOrders(text, productData) {
     for (const block of orderBlocks) {
         try {
             const orderIdRegex = /^\s*(\d+)/;
-            const salePriceRegex = /฿\s*([\d,]+\.?\d*)/;
+            const salePriceRegex = /฿\s*([\d,]+\.?\d*)/g;
             const orderIdMatch = block.match(orderIdRegex);
-            const salePriceMatch = block.match(salePriceRegex);
+            const priceMatches = [...block.matchAll(salePriceRegex)];
 
-            if (!orderIdMatch || !salePriceMatch) {
+            if (!orderIdMatch || priceMatches.length === 0) {
                 console.warn("Skipping block: Could not find Order ID or Sale Price.", block);
                 continue;
             }
 
             const orderId = orderIdMatch[1].trim();
-            const salePrice = parseFloat(salePriceMatch[1].replace(/,/g, ''));
+            const lastPriceMatch = priceMatches[priceMatches.length - 1];
+            const salePrice = parseFloat(String(lastPriceMatch[1]).replace(/,/g, ''));
             const isAffiliate = block.includes('ครีเอเตอร์แอฟฟิลิเอต');
             const items = [];
             let foundProducts = [];
@@ -323,23 +324,22 @@ function parseOrders(text, productData) {
                 const productNameIndex = block.indexOf(product.Matching_Keywords);
                 const searchArea = block.substring(productNameIndex);
                 let quantity = 0;
-                const specialSoapSKUs = ['tan_soap', 'pom_soap'];
 
-                // Handle special quantity format for specific soaps ("3 ก้อน")
-                if (specialSoapSKUs.includes(product.SKU)) {
-                    const specialQtyMatch = searchArea.match(/(\d+)\s*ก้อน/);
-                    if (specialQtyMatch) quantity = parseInt(specialQtyMatch[1], 10);
+                // Common qty formats: "× 3", "x3", "X 3", "3 ชิ้น", "3 ก้อน"
+                const qtyPatterns = [
+                    /[×xX]\s*(\d+)/,
+                    /(\d+)\s*(?:ชิ้น|ก้อน)/
+                ];
+                for (const qp of qtyPatterns) {
+                    const m = searchArea.match(qp);
+                    if (m) { quantity = parseInt(m[1], 10); break; }
                 }
 
-                // Handle standard quantity format ("x 3")
                 if (quantity === 0) {
-                    const quantityMatch = searchArea.match(/×\s*(\d+)/);
-                    if (quantityMatch) quantity = parseInt(quantityMatch[1], 10);
+                    quantity = 1; // default to 1 if quantity not explicitly stated
                 }
-                
-                if (quantity > 0) {
-                    items.push({ productName: product.Matching_Keywords, quantity });
-                }
+
+                items.push({ productName: product.Matching_Keywords, quantity });
             }
 
             if (items.length > 0) {
