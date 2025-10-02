@@ -93,7 +93,7 @@ async function handleProcessOrders() {
 
         try {
             // 1. Check for collapsed orders first
-            const orderBlocks = orderText.split(/รหัสคำสั่งซื้อ:/).slice(1);
+            const orderBlocks = orderText.split(/รหัสคำสั่งซื้อ\s*[:：]?\s*/).slice(1);
             const collapsedOrderIds = [];
             const orderIdRegex = /^\s*(\d+)/;
 
@@ -285,7 +285,7 @@ function parseProductSheet(csvString) {
  */
 function parseOrders(text, productData) {
     const parsedOrders = [];
-    const orderBlocks = text.split(/รหัสคำสั่งซื้อ:/).slice(1);
+    const orderBlocks = text.split(/รหัสคำสั่งซื้อ\s*[:：]?\s*/).slice(1);
 
     for (const block of orderBlocks) {
         try {
