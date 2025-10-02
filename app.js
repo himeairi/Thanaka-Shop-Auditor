@@ -112,6 +112,15 @@ async function handleProcessOrders() {
                 return; // Halt the entire process
             }
 
+            // Ensure product data is available (fallback to local if cloud not loaded)
+            if (!masterProductData || !Array.isArray(masterProductData.products) || masterProductData.products.length === 0) {
+                try {
+                    masterProductData = parseProductSheet(productCSVData);
+                } catch (e) {
+                    console.error('Failed to initialize product data from local CSV:', e);
+                }
+            }
+
             // 2. Parse the orders from the text
             const orders = parseOrders(orderText, masterProductData);
             if (orders.length === 0) {
@@ -389,19 +398,28 @@ async function loadDataFromFirestore() {
     }
     const userId = auth.currentUser.uid;
     const docRef = doc(db, 'productData', userId);
-    const docSnap = await getDoc(docRef);
-
-    if (docSnap.exists() && docSnap.data().products && docSnap.data().products.length > 0) {
-        const products = docSnap.data().products;
-        masterProductData = {
-            products,
-            skuMap: new Map(products.map(p => [p.SKU, p]))
-        };
-        showNotification('✅ Loaded saved data from cloud.');
-    } else {
+    try {
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists() && docSnap.data().products && docSnap.data().products.length > 0) {
+            const products = docSnap.data().products;
+            masterProductData = {
+                products,
+                skuMap: new Map(products.map(p => [p.SKU, p]))
+            };
+            showNotification('✅ Loaded saved data from cloud.');
+        } else {
+            masterProductData = parseProductSheet(productCSVData);
+            try {
+                await saveMasterDataToFirestore();
+                showNotification('No saved data found. Loaded default data and saved to cloud.');
+            } catch (e) {
+                console.warn('Could not save default data to cloud (will use local only).');
+            }
+        }
+    } catch (e) {
+        console.error('Error loading product data from Firestore; using local defaults:', e);
         masterProductData = parseProductSheet(productCSVData);
-        await saveMasterDataToFirestore();
-        showNotification('No saved data found. Loaded default data and saved to cloud.');
+        showNotification('❌ Could not read cloud data. Using local defaults.', true);
     }
     renderProductTable(false);
 }
