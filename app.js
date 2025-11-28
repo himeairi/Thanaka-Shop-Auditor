@@ -93,7 +93,7 @@ async function handleProcessOrders() {
 
         try {
             // 1. Check for collapsed orders first
-            const orderBlocks = orderText.split(/รหัสคำสั่งซื้อ:/).slice(1);
+            const orderBlocks = orderText.split(/หมายเลขคำสั่งซื้อ:/).slice(1);
             const collapsedOrderIds = [];
             const orderIdRegex = /^\s*(\d+)/;
 
@@ -893,5 +893,6 @@ async function initialize() {
 
 // Start the application
 initialize();
+
 
 
