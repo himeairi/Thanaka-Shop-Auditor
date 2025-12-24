@@ -7,7 +7,6 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/9.6.10/firebas
 import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9.6.10/firebase-auth.js";
 import { getFirestore, doc, getDoc, setDoc, writeBatch, serverTimestamp, collectionGroup, query, where, getDocs } from "https://www.gstatic.com/firebasejs/9.6.10/firebase-firestore.js";
 
-
 // ===================================
 // == FIREBASE CONFIG
 // ===================================
@@ -232,15 +231,60 @@ async function handleWeeklyAudit() {
                         }, chosenDoc);
 
                         const savedOrder = chosenDoc.data();
-                        const profit = settlementAmount - savedOrder.cost;
+
+                        // Recalculate cost based on current local product data (code-first).
+                        // If any product is not found in local data (or bundle component missing), fall back to savedOrder.cost.
+                        let recalculatedCost = 0;
+                        let missingLocalProduct = false;
+
+                        if (savedOrder.items && Array.isArray(savedOrder.items)) {
+                            for (const item of savedOrder.items) {
+                                // savedOrder.items store productName as Product_Name (from earlier save)
+                                const localProduct = (masterProductData.products || []).find(p =>
+                                    p.Product_Name === item.productName || p.Matching_Keywords === item.productName
+                                );
+                                if (!localProduct) {
+                                    missingLocalProduct = true;
+                                    break;
+                                }
+
+                                // compute cost for this product (handle bundles)
+                                let itemUnitCost = 0;
+                                if (localProduct.Bundle_Components) {
+                                    const componentSKUs = String(localProduct.Bundle_Components).split(',').map(s => s.trim());
+                                    for (const sku of componentSKUs) {
+                                        if (masterProductData.skuMap && masterProductData.skuMap.has(sku)) {
+                                            itemUnitCost += parseFloat(masterProductData.skuMap.get(sku).Cost_Price || 0);
+                                        } else {
+                                            missingLocalProduct = true;
+                                            break;
+                                        }
+                                    }
+                                    if (missingLocalProduct) break;
+                                } else {
+                                    itemUnitCost = parseFloat(localProduct.Cost_Price || 0);
+                                }
+
+                                recalculatedCost += itemUnitCost * (item.quantity || 0);
+                            }
+                        } else {
+                            // No items in saved order - fallback
+                            missingLocalProduct = true;
+                        }
+
+                        if (missingLocalProduct) {
+                            recalculatedCost = savedOrder.cost;
+                        }
+
+                        const profit = settlementAmount - recalculatedCost;
                         totalWeeklyProfit += profit;
-                        totalWeeklyCost += savedOrder.cost;
+                        totalWeeklyCost += recalculatedCost;
 
                         weeklyResultsData.push({
                             orderId: savedOrder.orderId,
-                            products: savedOrder.items.map(item => `${item.productName} (x${item.quantity})`).join(', '),
+                            products: savedOrder.items ? savedOrder.items.map(item => `${item.productName} (x${item.quantity})`).join(', ') : '',
                             settlement: settlementAmount,
-                            cost: savedOrder.cost,
+                            cost: recalculatedCost,
                             profit: profit,
                             uploadedAt: savedOrder.savedAt && typeof savedOrder.savedAt.toDate === 'function'
                                 ? savedOrder.savedAt.toDate()
@@ -278,6 +322,15 @@ function parseProductSheet(csvString) {
     products.sort((a, b) => (b.Matching_Keywords || '').length - (a.Matching_Keywords || '').length);
     const skuMap = new Map(products.map(p => [p.SKU, p]));
     return { products, skuMap };
+}
+
+/**
+ * NEW: Force local-only loading of product data from data.js.
+ * This makes data.js the single source of truth for product prices.
+ */
+function loadLocalDataOnly() {
+    masterProductData = parseProductSheet(productCSVData);
+    renderProductTable(false);
 }
 
 /**
@@ -844,6 +897,9 @@ function switchTab(activeTabId) {
 async function initialize() {
     orderTextArea.value = sampleOrders;
     
+    // Load local product data first and make it the single source of truth.
+    loadLocalDataOnly();
+
     // Set up Firebase connection
     try {
         const app = initializeApp(firebaseConfig);
@@ -853,7 +909,8 @@ async function initialize() {
         onAuthStateChanged(auth, async user => {
             if (user) {
                 showNotification('☁️ Connected to cloud database...');
-                await loadDataFromFirestore();
+                // switched to code-first approach: do not load product data from Firestore anymore
+                // await loadDataFromFirestore();
             }
         });
     } catch (e) {
@@ -893,7 +950,3 @@ async function initialize() {
 
 // Start the application
 initialize();
-
-
-
-
