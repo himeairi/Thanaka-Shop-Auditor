@@ -58,6 +58,7 @@ const copyWeeklyBtn = document.getElementById('copy-weekly-btn');
 const collapsedOrderModal = document.getElementById('collapsed-order-modal');
 const collapsedOrderList = document.getElementById('collapsed-order-list');
 const closeModalBtn = document.getElementById('close-modal-btn');
+const weeklyItemSummaryList = document.getElementById('weekly-item-summary-list');
 
 
 // ===================================
@@ -65,6 +66,7 @@ const closeModalBtn = document.getElementById('close-modal-btn');
 // ===================================
 let processedOrdersData = [];
 let weeklyResultsData = [];
+let weeklyItemSummaryData = {};
 let masterProductData = {};
 let db;
 let auth;
@@ -208,6 +210,7 @@ async function handleWeeklyAudit() {
 
                 let totalWeeklyProfit = 0, totalWeeklyCost = 0, foundMatches = 0;
                 weeklyResultsData = [];
+                weeklyItemSummaryData = {}; // Reset item summary for new calculation
                 const dataRows = reportData.slice(1);
 
                 for (const row of dataRows) {
@@ -239,6 +242,10 @@ async function handleWeeklyAudit() {
 
                         if (savedOrder.items && Array.isArray(savedOrder.items)) {
                             for (const item of savedOrder.items) {
+                                // Aggregate quantities for the weekly summary
+                                const pName = item.productName || 'Unknown Product';
+                                weeklyItemSummaryData[pName] = (weeklyItemSummaryData[pName] || 0) + (item.quantity || 0);
+
                                 // savedOrder.items store productName as Product_Name (from earlier save)
                                 const localProduct = (masterProductData.products || []).find(p =>
                                     p.Product_Name === item.productName || p.Matching_Keywords === item.productName
@@ -294,7 +301,7 @@ async function handleWeeklyAudit() {
                 }
                 
                 showNotification(`Found ${foundMatches} matching orders in the database.`);
-                displayWeeklyResults(weeklyResultsData, totalWeeklyProfit, totalWeeklyCost, foundMatches);
+                displayWeeklyResults(weeklyResultsData, totalWeeklyProfit, totalWeeklyCost, foundMatches, weeklyItemSummaryData);
             } catch (error) {
                 console.error("Error processing weekly report:", error);
                 alert(`Error: ${error.message}`);
@@ -637,11 +644,30 @@ function displayResults(orders) {
 /**
  * Renders the weekly profit results into its dedicated table.
  */
-function displayWeeklyResults(results, totalProfit, totalCost, orderCount) {
+function displayWeeklyResults(results, totalProfit, totalCost, orderCount, itemSummary) {
     const formatCurrency = (num) => `฿${num.toFixed(2)}`;
     totalWeeklyProfitEl.textContent = formatCurrency(totalProfit);
     totalWeeklyCostEl.textContent = formatCurrency(totalCost);
     totalWeeklyOrdersEl.textContent = orderCount;
+
+    // Render the item summary
+    weeklyItemSummaryList.innerHTML = '';
+    if (itemSummary) {
+        const getCatalogOrder = (name) => {
+            const prod = masterProductData.products.find(p => p.Product_Name === name || p.Matching_Keywords === name);
+            return prod && prod.Catalog_Order !== undefined ? parseFloat(prod.Catalog_Order) : 99999;
+        };
+        
+        // Sort items by custom Catalog_Order defined in the data sheet
+        const sortedItems = Object.entries(itemSummary).sort((a, b) => getCatalogOrder(a[0]) - getCatalogOrder(b[0]));
+        sortedItems.forEach(([productName, qty]) => {
+            const li = document.createElement('li');
+            li.className = 'flex justify-between items-center bg-white px-3 py-2 rounded border border-indigo-50 shadow-sm';
+            li.innerHTML = `<span class="truncate pr-2 font-medium" title="${productName}">${productName}</span> <span class="font-bold text-indigo-700 bg-indigo-100 px-2 py-0.5 rounded-full text-xs">x${qty}</span>`;
+            weeklyItemSummaryList.appendChild(li);
+        });
+    }
+
     weeklyResultsTableBody.innerHTML = '';
     results.forEach((result, index) => {
         const uploadedDisplay = result.uploadedAt
@@ -755,6 +781,20 @@ function copyWeeklyReportToClipboard() {
         <p><strong>Total Cost:</strong> ${formatCurrency(totalCost)}</p>
         <p><strong>Total Orders Found:</strong> ${weeklyResultsData.length}</p>
         <br>
+        <h2>Products Sold Summary</h2>
+        <ul>`;
+        
+    const getCatalogOrder = (name) => {
+        const prod = masterProductData.products.find(p => p.Product_Name === name || p.Matching_Keywords === name);
+        return prod && prod.Catalog_Order !== undefined ? parseFloat(prod.Catalog_Order) : 99999;
+    };
+    
+    const sortedItems = Object.entries(weeklyItemSummaryData).sort((a, b) => getCatalogOrder(a[0]) - getCatalogOrder(b[0]));
+    sortedItems.forEach(([productName, qty]) => {
+        htmlString += `<li>${productName}: <strong>x${qty}</strong></li>`;
+    });
+
+    htmlString += `</ul><br>
         <table>
             <thead>
                 <tr>
@@ -815,6 +855,7 @@ function renderProductTable(isEditable = false) {
             <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cost Price</th>
             <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Image URL</th>
             <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Bundle Components</th>
+            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Catalog Order</th>
         </tr>
     `;
     table.appendChild(thead);
@@ -832,6 +873,7 @@ function renderProductTable(isEditable = false) {
                 <td class="px-2 py-1"><input type="text" data-key="Cost_Price" class="w-24 p-1 border rounded" value="${product.Cost_Price || ''}"></td>
                 <td class="px-2 py-1"><input type="text" data-key="Image_URL" class="w-full p-1 border rounded" value="${product.Image_URL || ''}"></td>
                 <td class="px-2 py-1"><input type="text" data-key="Bundle_Components" class="w-full p-1 border rounded" value="${product.Bundle_Components || ''}"></td>
+                <td class="px-2 py-1"><input type="text" data-key="Catalog_Order" class="w-16 p-1 border rounded" value="${product.Catalog_Order || ''}"></td>
             `;
         } else {
             row.innerHTML = `
@@ -841,6 +883,7 @@ function renderProductTable(isEditable = false) {
                 <td class="px-4 py-3 text-sm text-gray-800">${product.Cost_Price || ''}</td>
                 <td class="px-4 py-3 text-sm text-gray-600">${product.Image_URL || ''}</td>
                 <td class="px-4 py-3 text-sm text-gray-600">${product.Bundle_Components || ''}</td>
+                <td class="px-4 py-3 text-sm text-gray-600">${product.Catalog_Order || ''}</td>
             `;
         }
         tbody.appendChild(row);
