@@ -325,6 +325,12 @@ function parseProductSheet(csvString) {
     const sheetName = workbook.SheetNames[0];
     const sheet = workbook.Sheets[sheetName];
     const products = XLSX.utils.sheet_to_json(sheet);
+
+    // Preserve original order from the spreadsheet before sorting
+    products.forEach((p, index) => {
+        p.Catalog_Order = index;
+    });
+
     // Sort by keyword length to match longer, more specific names first
     products.sort((a, b) => (b.Matching_Keywords || '').length - (a.Matching_Keywords || '').length);
     const skuMap = new Map(products.map(p => [p.SKU, p]));
@@ -862,7 +868,10 @@ function renderProductTable(isEditable = false) {
     const tbody = document.createElement('tbody');
     tbody.className = 'divide-y divide-gray-200';
 
-    masterProductData.products.forEach(product => {
+    // Sort visually by Catalog Order so the table matches data.js
+    const displayProducts = [...masterProductData.products].sort((a, b) => (a.Catalog_Order || 0) - (b.Catalog_Order || 0));
+
+    displayProducts.forEach(product => {
         const row = document.createElement('tr');
         row.dataset.sku = product.SKU;
         if (isEditable) {
