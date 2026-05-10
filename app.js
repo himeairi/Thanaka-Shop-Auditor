@@ -658,18 +658,30 @@ function displayWeeklyResults(results, totalProfit, totalCost, orderCount, itemS
 
     // Render the item summary
     weeklyItemSummaryList.innerHTML = '';
-    if (itemSummary) {
-        const getCatalogOrder = (name) => {
-            const prod = masterProductData.products.find(p => p.Product_Name === name || p.Matching_Keywords === name);
-            return prod && prod.Catalog_Order !== undefined ? parseFloat(prod.Catalog_Order) : 99999;
-        };
+    if (itemSummary && masterProductData.products) {
+        // Render ALL products from the catalog in their original sequence
+        const displayProducts = [...masterProductData.products].sort((a, b) => (a.Catalog_Order || 0) - (b.Catalog_Order || 0));
         
-        // Sort items by custom Catalog_Order defined in the data sheet
-        const sortedItems = Object.entries(itemSummary).sort((a, b) => getCatalogOrder(a[0]) - getCatalogOrder(b[0]));
-        sortedItems.forEach(([productName, qty]) => {
+        displayProducts.forEach(product => {
+            const displayName = product.Product_Name || product.Matching_Keywords;
+            
+            // Get quantity (checking both Product_Name and Matching_Keywords just in case)
+            let qty = itemSummary[product.Matching_Keywords] || 0;
+            if (product.Product_Name && itemSummary[product.Product_Name] && product.Product_Name !== product.Matching_Keywords) {
+                qty += itemSummary[product.Product_Name];
+            }
+
             const li = document.createElement('li');
-            li.className = 'flex justify-between items-center bg-white px-3 py-2 rounded border border-indigo-50 shadow-sm';
-            li.innerHTML = `<span class="truncate pr-2 font-medium" title="${productName}">${productName}</span> <span class="font-bold text-indigo-700 bg-indigo-100 px-2 py-0.5 rounded-full text-xs">x${qty}</span>`;
+            li.className = 'flex justify-between items-center px-3 py-2 rounded border shadow-sm transition-all';
+            
+            if (qty > 0) {
+                li.classList.add('bg-white', 'border-indigo-100');
+                li.innerHTML = `<span class="truncate pr-2 font-medium text-gray-800" title="${displayName}">${displayName}</span> <span class="font-bold text-indigo-700 bg-indigo-100 px-2 py-0.5 rounded-full text-xs">x${qty}</span>`;
+            } else {
+                // Style items with 0 sales slightly faded
+                li.classList.add('bg-gray-50', 'border-gray-200', 'opacity-60');
+                li.innerHTML = `<span class="truncate pr-2 font-medium text-gray-500" title="${displayName}">${displayName}</span> <span class="font-bold text-gray-500 bg-gray-200 px-2 py-0.5 rounded-full text-xs">x0</span>`;
+            }
             weeklyItemSummaryList.appendChild(li);
         });
     }
@@ -788,19 +800,36 @@ function copyWeeklyReportToClipboard() {
         <p><strong>Total Orders Found:</strong> ${weeklyResultsData.length}</p>
         <br>
         <h2>Products Sold Summary</h2>
-        <ul>`;
+        <table>
+            <thead>
+                <tr>
+                    <th>Product Name</th>
+                    <th>Qty Sold</th>
+                </tr>
+            </thead>
+            <tbody>`;
         
-    const getCatalogOrder = (name) => {
-        const prod = masterProductData.products.find(p => p.Product_Name === name || p.Matching_Keywords === name);
-        return prod && prod.Catalog_Order !== undefined ? parseFloat(prod.Catalog_Order) : 99999;
-    };
+    const displayProducts = [...masterProductData.products].sort((a, b) => (a.Catalog_Order || 0) - (b.Catalog_Order || 0));
     
-    const sortedItems = Object.entries(weeklyItemSummaryData).sort((a, b) => getCatalogOrder(a[0]) - getCatalogOrder(b[0]));
-    sortedItems.forEach(([productName, qty]) => {
-        htmlString += `<li>${productName}: <strong>x${qty}</strong></li>`;
+    displayProducts.forEach(product => {
+        const displayName = product.Product_Name || product.Matching_Keywords;
+        let qty = weeklyItemSummaryData[product.Matching_Keywords] || 0;
+        if (product.Product_Name && weeklyItemSummaryData[product.Product_Name] && product.Product_Name !== product.Matching_Keywords) {
+            qty += weeklyItemSummaryData[product.Product_Name];
+        }
+        
+        // Fade out items with 0 sales in the copy export
+        const rowStyle = qty > 0 ? '' : 'color: #9ca3af;';
+        
+        htmlString += `
+            <tr style="${rowStyle}">
+                <td>${displayName}</td>
+                <td><strong>${qty}</strong></td>
+            </tr>`;
     });
 
-    htmlString += `</ul><br>
+    htmlString += `</tbody></table><br>
+        <h2>Detailed Orders</h2>
         <table>
             <thead>
                 <tr>
